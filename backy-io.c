@@ -108,8 +108,8 @@ pthread_mutex_t log_mutex;
 MD5_CTX md5_c;
 u_int8_t md5_digest[MD5_DIGEST_LENGTH];
 
-uint32_t crc32c = 0xffffffff;
-uint32_t crc32c_received = 0xffffffff;
+static uint32_t crc32c = 0xffffffff;
+static uint32_t crc32c_expected = 0xffffffff;
 
 #define	plural(n)	((n) == 1 ? "" : "s")
 
@@ -1353,7 +1353,7 @@ write_decompressed(void *arg)
 			die_if(write(g_write_fd, buf, bufp->length.val) < 0, ESTR_WRITE);
 		}
 		g_out_bytes += bufp->length.val;
-		crc32c=crc32c_hardware(crc32c,(const u_int8_t *) buf, bufp->length.val);
+		crc32c = crc32c_hardware(crc32c,(const u_int8_t *) buf, bufp->length.val);
 
 		if (g_opt_verbose) {
 			TAMP_LOG("progress: %lu bytes processed.\n", g_out_bytes);
@@ -1367,10 +1367,13 @@ write_decompressed(void *arg)
 
 	vdie_if_n(g_out_bytes != g_filesize, "out_bytes does not match size (%lu != %lu)\n", g_out_bytes, g_filesize);
 
-	//XXX: read crc32c from json
-	if (crc32c_received != 0xffffffff) {
-		TAMP_LOG("received crc32c = %08x, computed crc32c %08x\n",crc32c_received, crc32c);
-		vdie_if_n(crc32c != crc32c_received,"crc32c checksum failure.\n",0);
+	if (g_opt_verify_decompressed) {
+		TAMP_LOG("verify_deep: all chunks checksum passed\n");
+	}
+
+	if (crc32c_expected != 0xffffffff) {
+		vdie_if_n(crc32c != crc32c_expected,"crc32c checksum failure: expected %08x computed %08x\n", crc32c_expected, crc32c);
+		TAMP_LOG("verify_crc32: checksum correct\n");
 	}
 
 	if (g_opt_decompress) {
@@ -1568,6 +1571,17 @@ static void parse_json(int fd)
 		} else if (jsoneq(buf, tok + i, "blocksize_kb") == 0) {
 			g_block_size = strtol(buf + (tok + i + 1)->start, NULL, 0) * 1024;
 			i++;
+		} else if (jsoneq(buf, tok + i, "crc32c") == 0) {
+			crc32c_expected = (hex2dec(buf[(tok + i + 1)->start + 0]) << 28) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 1]) << 24) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 2]) << 20) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 3]) << 16) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 4]) << 12) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 5]) << 8) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 6]) << 4) +
+			                  (hex2dec(buf[(tok + i + 1)->start + 7]) << 0);
+			TAMP_LOG("crc32c_expected: %08x\n", crc32c_expected);
+			i += 1;
 		} else if (jsoneq(buf, tok + i, "mapping") == 0) {
 			vdie_if_n((tok + i + 1)->type != JSMN_OBJECT, "json parser error: mapping has unexpected type (%d)\n", (tok + i + 1)->type);
 			g_block_count = (tok + i + 1)->size;
@@ -1584,6 +1598,7 @@ static void parse_json(int fd)
 					                                                hex2dec(buf[(tok + j + 1)->start + k * 2 + 1]);
 				}
 			}
+			i = j;
 		} else {
 			if ((tok + i)->type == JSMN_STRING) { 
 				vdie_if_n(1, "json parser error: unexpected token '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
@@ -1882,8 +1897,6 @@ main(int argc, char **argv)
 
 	if (g_opt_verbose && !g_opt_decompress) TAMP_LOG("%lu bytes read.\n",g_in_bytes);
 	if (g_opt_verbose && g_opt_decompress) TAMP_LOG("%lu bytes written.\n",g_out_bytes);
-
-	TAMP_LOG("crc32c: %08x\n",crc32c);
 
 	free(g_zeroblock);
 
