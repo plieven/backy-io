@@ -234,6 +234,7 @@ static int g_opt_verbose    = 0;		/* Verbose flag is set */
 static int g_opt_decompress = 0;	/* Decompress is set */
 static int g_opt_compress   = 0;	    /* Compress is set */
 static int g_opt_verify     = 0;	    /* Verify is set */
+static int g_opt_verify_simple     = 0;	    /* Verify simple is set */
 static int g_opt_verify_decompressed     = 0;	    /* Verify of decompressed chunks is set */
 
 static int g_single_file = 1;		/* Just do a single file */
@@ -1784,13 +1785,16 @@ main(int argc, char **argv)
 	/* Default maximum threads */
 	g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-	while ((c = getopt(argc, argv, "Vtdvci:o:b:m:p:X:")) != -1) {
+	while ((c = getopt(argc, argv, "VtTdvci:o:b:m:p:X:")) != -1) {
 		switch (c) {
 		case 'V':
 			g_opt_verify_decompressed = 1;
 			break;
 		case 't':
 			g_opt_verify = 1;
+			break;
+		case 'T':
+			g_opt_verify_simple = 1;
 			break;
 		case 'd':
 			g_opt_decompress = 1;
@@ -1837,7 +1841,7 @@ main(int argc, char **argv)
 		}
 	}
 
-	if (g_opt_compress + g_opt_decompress + g_opt_verify != 1) opt_error++;
+	if (g_opt_compress + g_opt_decompress + g_opt_verify + g_opt_verify_simple != 1) opt_error++;
 
 	if (g_single_file && (argc != optind))
 		/*
@@ -1846,11 +1850,11 @@ main(int argc, char **argv)
 		 */
 		opt_error++;
 	if (opt_error) {
-		TAMP_LOG(
-			"usage: %1$s [-dDvnc] [-p maxthr] [-m minthr]"
-			" [-b blkKB] [-r readKB] [-i file] [-o file]\n"
-			"or:    %1$s [-dDv] [-p p] [-m m] [-b b] [file ...]\n",
-			g_arg0);
+		TAMP_LOG("TODO\n");
+			//~ "usage: %1$s [-dDvnc] [-p maxthr] [-m minthr]"
+			//~ " [-b blkKB] [-r readKB] [-i file] [-o file]\n"
+			//~ "or:    %1$s [-dDv] [-p p] [-m m] [-b b] [file ...]\n",
+			//~ g_arg0);
 		exit(2);
 	}
 
@@ -1885,10 +1889,11 @@ main(int argc, char **argv)
 				"%s: block size %uKB, max threads %lu\n",
 				g_arg0, g_block_size / 1024, g_max_threads);
 
-	if (g_opt_decompress || g_opt_verify) {
+	if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
 		parse_json(read_fd);
-		init_zero_block();
 		verify_chunks();
+		if (g_opt_verify_simple) exit(0);
+		init_zero_block();
 		decompress_fd(g_opt_decompress ? read_fd : -1);
 	} else {
 		vdie_if_n(1, "work in progress\n", 0);
