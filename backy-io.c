@@ -230,10 +230,13 @@ static int g_write_fd;		/* File descriptor to output to */
 static volatile uint64_t g_in_bytes = 0;		/* Bytes read */
 static volatile uint64_t g_out_bytes = 0;	/* Bytes written */
 
-static int g_opt_verbose = 0;		/* Verbose flag is set */
+static int g_opt_verbose    = 0;		/* Verbose flag is set */
 static int g_opt_decompress = 0;	/* Decompress is set */
+static int g_opt_compress   = 0;	    /* Compress is set */
+static int g_opt_verify     = 0;	    /* Verify is set */
+static int g_opt_verify_decompressed     = 0;	    /* Verify of decompressed chunks is set */
+
 static int g_single_file = 1;		/* Just do a single file */
-static int g_opt_verify = -1;		/* Verify -1 disable, 0 simple, 1 deep */
 
 static vol_int g_compress_threads;
 static vol_int g_comp_idle;		/* Zero IFF all (de)compress threads */
@@ -1301,16 +1304,18 @@ write_decompressed(void *arg)
 
 	g_out_bytes = 0;
 
-	if (g_write_fd < 0) {
-		vdie_if((g_write_fd = open(g_out_path,
-			O_WRONLY | O_CREAT | O_LARGEFILE, 0666)) < 0,
-			"open: %s", g_out_path);
-	} else {
-		//write to stdout
-		if (fcntl(1, F_SETPIPE_SZ, g_block_size) < 0) {
-			TAMP_LOG("WARN: f_setpipe_sz to %d failed\n", g_block_size);
+	if (g_opt_decompress) {
+		if (g_write_fd < 0) {
+			vdie_if((g_write_fd = open(g_out_path,
+				O_WRONLY | O_CREAT | O_LARGEFILE, 0666)) < 0,
+				"open: %s", g_out_path);
+		} else {
+			//write to stdout
+			if (fcntl(1, F_SETPIPE_SZ, g_block_size) < 0) {
+				TAMP_LOG("WARN: f_setpipe_sz to %d failed\n", g_block_size);
+			}
 		}
-	}	
+	}
 
 	sequence = 0;
 	/*CONSTCOND*/
@@ -1329,7 +1334,7 @@ write_decompressed(void *arg)
 		buf_hash = g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8;
 		if (dedup_is_zero_chunk(buf_hash)) {
 			buf = g_zeroblock;
-		} else {
+		} else if (g_opt_verify_decompressed) {
 			char hash[DEDUP_MAC_SIZE/8];
 			char hash_c[DEDUP_MAC_SIZE/4+1];
 			char hash_e[DEDUP_MAC_SIZE/4+1];
@@ -1337,16 +1342,21 @@ write_decompressed(void *arg)
 			dedup_hash_sprint(&hash[0], hash_c);
 			dedup_hash_sprint(buf_hash, hash_e);
 			vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE / 8), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
+			if (g_opt_verbose > 1) {
+				TAMP_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
+			}
 		}
 
 		assert(MIN(bufp->length.val, g_filesize - g_out_bytes) == bufp->length.val);
 
-		//die_if(write(g_write_fd, buf, bufp->length.val) < 0, ESTR_WRITE);
+		if (g_opt_decompress) {
+			die_if(write(g_write_fd, buf, bufp->length.val) < 0, ESTR_WRITE);
+		}
 		g_out_bytes += bufp->length.val;
 		crc32c=crc32c_hardware(crc32c,(const u_int8_t *) buf, bufp->length.val);
 
 		if (g_opt_verbose) {
-			TAMP_LOG("progress: %lu bytes written.\n", g_out_bytes);
+			TAMP_LOG("progress: %lu bytes processed.\n", g_out_bytes);
 		}
 
 		/* We can free that buffer */
@@ -1363,6 +1373,9 @@ write_decompressed(void *arg)
 		vdie_if_n(crc32c != crc32c_received,"crc32c checksum failure.\n",0);
 	}
 
+	if (g_opt_decompress) {
+		close(g_write_fd);
+	}
 
 	return (NULL);
 }
@@ -1589,17 +1602,14 @@ static void parse_json(int fd)
 	fclose(input);
 }
 
-void verify_chunks(int deep) {
+void verify_chunks() {
 	u_int8_t chunk_file[DEDUP_HASH_FILENAME_MAX];
-	vdie_if_n(deep, "deep verify is not implemented yet", 0);
 	int i;
 	for (i = 0; i < g_block_count; i++) {
 		dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8);
 		vdie_if_n(!file_exists(chunk_file), "verify: chunk %s does not exist\n", chunk_file);
 	}
-	if (!deep) {
-		TAMP_LOG("verify_simple: all chunks available\n");
-	}
+	TAMP_LOG("verify_simple: all chunks available\n");
 }
 
 static void
@@ -1752,14 +1762,22 @@ main(int argc, char **argv)
 	/* Default maximum threads */
 	g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-	while ((c = getopt(argc, argv, "dDvnci:o:b:m:t:p:X:r:")) != -1) {
+	while ((c = getopt(argc, argv, "Vtdvci:o:b:m:p:X:")) != -1) {
 		switch (c) {
+		case 'V':
+			g_opt_verify_decompressed = 1;
+			break;
+		case 't':
+			g_opt_verify = 1;
+			break;
 		case 'd':
 			g_opt_decompress = 1;
-			if (g_opt_verify == -1) g_opt_verify = 0;
 			break;
 		case 'v':
 			g_opt_verbose++;
+			break;
+		case 'c':
+			g_opt_compress = 1;
 			break;
 		case 'i':
 			/* Input file specified */
@@ -1784,7 +1802,6 @@ main(int argc, char **argv)
 		case 'm':
 			g_min_threads = atol(optarg);
 			break;
-		case 't':
 		case 'p':
 			g_max_threads = atol(optarg);
 			break;
@@ -1793,12 +1810,12 @@ main(int argc, char **argv)
 		    g_dedup_dir = optarg;
 		    //TAMP_LOG("enabling dedup with digest %s\n", DEDUP_MAC_NAME);
 		    break;
-		case '?':
+		default:
 			opt_error++;
 		}
 	}
 
-	//if (!g_opt_dedup) opt_error++;
+	if (g_opt_compress + g_opt_decompress + g_opt_verify != 1) opt_error++;
 
 	if (g_single_file && (argc != optind))
 		/*
@@ -1846,11 +1863,11 @@ main(int argc, char **argv)
 				"%s: block size %uKB, max threads %lu\n",
 				g_arg0, g_block_size / 1024, g_max_threads);
 
-	if (g_opt_decompress) {
+	if (g_opt_decompress || g_opt_verify) {
 		parse_json(read_fd);
 		init_zero_block();
-		if (g_opt_verify) verify_chunks(g_opt_verify);
-		decompress_fd(read_fd);
+		verify_chunks();
+		decompress_fd(g_opt_decompress ? read_fd : -1);
 	} else {
 		vdie_if_n(1, "work in progress\n", 0);
 		compress_fd(read_fd);
