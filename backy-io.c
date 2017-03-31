@@ -1329,7 +1329,9 @@ write_decompressed(void *arg)
 			break;
 		}
 		(void) decrement(&g_output_buffers);
-		
+
+		assert(MIN(bufp->length.val, g_filesize - g_out_bytes) == bufp->length.val);
+
 		buf = bufp->buf;
 		buf_hash = g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8;
 		if (dedup_is_zero_chunk(buf_hash)) {
@@ -1346,8 +1348,6 @@ write_decompressed(void *arg)
 				TAMP_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
 			}
 		}
-
-		assert(MIN(bufp->length.val, g_filesize - g_out_bytes) == bufp->length.val);
 
 		if (g_opt_decompress) {
 			die_if(write(g_write_fd, buf, bufp->length.val) < 0, ESTR_WRITE);
@@ -1454,11 +1454,12 @@ decompress(void *arg)
 			put_last(&comp_q_dirty, bufp);
 			//XXX: verify if the hash is ok ?!
 		} else {
+			uint64_t expected_size = MIN(g_block_size, g_filesize - bufp->seq * g_block_size);
 			(void) decrement(&g_comp_idle);
 			vdie_if_n(bufp->buf[0] != 0xf0 || bufp->length.val < 5 + 3, "lzo header error\n", 0);
 			comp_bufp->length.val = (bufp->buf[1] << 24) | (bufp->buf[2] << 16) | (bufp->buf[3] << 8) | bufp->buf[4];
 			vdie_if_n(comp_bufp->length.val < 0 || bufp->length.val - 5 > comp_bufp->length.val + comp_bufp->length.val / 64 + 16 + 3, "lzo header error\n", 0);
-			vdie_if_n(comp_bufp->length.val != g_block_size, "lzo data does not match block size\n", 0);
+			vdie_if_n(comp_bufp->length.val != expected_size, "lzo data has unexpected size (expected %lu found %lu)\n", expected_size, comp_bufp->length.val);
 			/* Decompress */
 			ret = lzo1x_decompress(
 				(const unsigned char *) &(bufp->buf) + 5,
