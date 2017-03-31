@@ -1298,7 +1298,6 @@ write_decompressed(void *arg)
 {
 	unsigned long sequence;
 	vol_buf *bufp;
-	ssize_t bytes;
 
 	g_out_bytes = 0;
 
@@ -1316,6 +1315,8 @@ write_decompressed(void *arg)
 	sequence = 0;
 	/*CONSTCOND*/
 	while (1) {
+		void *buf;
+		void *buf_hash;
 		bufp = get_seq(&comp_q_dirty, sequence);
 		if (! bufp) {
 			/* We missed g_last_block being set */
@@ -1324,12 +1325,25 @@ write_decompressed(void *arg)
 		}
 		(void) decrement(&g_output_buffers);
 		
-		bytes = MIN(bufp->length.val, g_filesize - g_out_bytes);
+		buf = bufp->buf;
+		buf_hash = g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8;
+		if (dedup_is_zero_chunk(buf_hash)) {
+			buf = g_zeroblock;
+		} else {
+			char hash[DEDUP_MAC_SIZE/8];
+			char hash_c[DEDUP_MAC_SIZE/4+1];
+			char hash_e[DEDUP_MAC_SIZE/4+1];
+			mmh3(bufp->buf, bufp->length.val, 0, &hash[0]);
+			dedup_hash_sprint(&hash[0], hash_c);
+			dedup_hash_sprint(buf_hash, hash_e);
+			vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE / 8), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
+		}
 
-		 bytes = write(g_write_fd, bufp->buf, bytes);
-		 die_if(bytes < 0, ESTR_WRITE);
-		 g_out_bytes += bytes;
-		 crc32c=crc32c_hardware(crc32c,(const u_int8_t *) bufp->buf, bytes);
+		assert(MIN(bufp->length.val, g_filesize - g_out_bytes) == bufp->length.val);
+
+		//die_if(write(g_write_fd, buf, bufp->length.val) < 0, ESTR_WRITE);
+		g_out_bytes += bufp->length.val;
+		crc32c=crc32c_hardware(crc32c,(const u_int8_t *) buf, bufp->length.val);
 
 		if (g_opt_verbose) {
 			TAMP_LOG("progress: %lu bytes written.\n", g_out_bytes);
@@ -1401,7 +1415,6 @@ decompress(void *arg)
 		if (dedup_is_zero_chunk(g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8)) {
 			put_last(&in_q_free, comp_bufp);
 			put_last(&comp_q_dirty, bufp);
-			memset(bufp->buf, 0x00, g_block_size);
 			bufp->length.val = g_block_size;
 			(void) increment(&g_output_buffers);
 			continue;
