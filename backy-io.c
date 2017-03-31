@@ -1900,9 +1900,6 @@ main(int argc, char **argv)
 		compress_fd(read_fd);
 	}
 
-	if (g_opt_verbose && !g_opt_decompress) TAMP_LOG("%lu bytes read.\n",g_in_bytes);
-	if (g_opt_verbose && g_opt_decompress) TAMP_LOG("%lu bytes written.\n",g_out_bytes);
-
 	free(g_zeroblock);
 
 	return (errors);
