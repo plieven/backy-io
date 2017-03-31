@@ -1629,6 +1629,7 @@ void verify_chunks() {
 	u_int8_t chunk_file[DEDUP_HASH_FILENAME_MAX];
 	int i;
 	for (i = 0; i < g_block_count; i++) {
+		if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE / 8)) continue;
 		dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8);
 		vdie_if_n(!file_exists(chunk_file), "verify: chunk %s does not exist\n", chunk_file);
 	}
