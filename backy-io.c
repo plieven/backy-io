@@ -1584,6 +1584,12 @@ static void parse_json(int fd)
 					                                                hex2dec(buf[(tok + j + 1)->start + k * 2 + 1]);
 				}
 			}
+		} else {
+			if ((tok + i)->type == JSMN_STRING) { 
+				vdie_if_n(1, "json parser error: unexpected token '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
+			} else {
+				vdie_if_n(1, "json parser error: unexpected token\n", 0);
+			}
 		}
 	}
 
