@@ -3,7 +3,7 @@
 PROG =		backy-io
 
 MAIN_OBJ =	backy-io.o
-EXT_OBJ  =  jsmn/jsmn.o minilzo/minilzo.o
+EXT_OBJ  =  jsmn/jsmn.o minilzo/minilzo.o smhasher/src/MurmurHash3.o
 
 TARGETS =	$(PROG)
 
@@ -22,7 +22,7 @@ LDFLAGS =	$(ARCH) -O3 -pthread
 all : $(PROG)
 
 $(PROG) : $(MAIN_OBJ) $(EXT_OBJ)
-	$(CC) -o $@ $(MAIN_OBJ) $(EXT_OBJ) $(LDFLAGS)
+	$(CC) -o $@ $(EXT_OBJ) $(MAIN_OBJ) $(LDFLAGS)
 
 clean :
 	rm -f $(TARGETS) *.o

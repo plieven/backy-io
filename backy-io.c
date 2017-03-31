@@ -75,10 +75,11 @@
 #define	MAX_CBLK_SIZE		4*1024*1024	/* 4MiB */
 #define	MAX_OUTPUT_BUFFERS	64
 
-#define DEDUP_MAC_NAME "mmr3-x64"
+#include "smhasher/src/MurmurHash3.h"
+#define DEDUP_MAC_NAME "mmh3"
 #define DEDUP_MAC_SIZE 128
-#define DEDUP_MAC_ZEROBLOCK "c72b4ba82d1f51b71c8a18195ad33fc8"
 #define DEDUP_HASH_FILENAME_MAX 512
+#define mmh3 _Z19MurmurHash3_x64_128PKvijPv
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -244,6 +245,7 @@ static unsigned long g_max_threads;	/* Maximum (de)compress threads */
 static unsigned long g_min_threads = 1;	/* Minimum (de)compress threads */
 
 static char *g_stats_path = "(stdin)";
+static void *g_zeroblock = NULL;
 
 /* defaults */
 static unsigned int g_block_size = 4096 * 1024;
@@ -251,7 +253,7 @@ static unsigned int g_version = 1;
 static uint64_t g_filesize = 0;     /* size of the uncompressed data */
 static uint64_t g_block_count = 0;
 static char* g_block_mapping = NULL;
-
+static char g_zeroblock_hash[DEDUP_MAC_SIZE/8];
 
 static unsigned int g_opt_dedup = 1;
 
@@ -446,14 +448,11 @@ void dedup_hash_mkdir(u_int8_t * hash)
 	  dedup_mkdir(dir);
 }
 
-static int dedup_is_zero_chunk(u_int8_t *hash) {
-	uint8_t h[DEDUP_MAC_SIZE / 4 + 1];
+static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
 	int i;
 	for (i=0; i < DEDUP_MAC_SIZE / 8; i++) {
-		sprintf(h + i * 2, "%02x", hash[i]);
+		sprintf(s + i * 2, "%02x", hash[i]);
 	}
-	return !strcmp(h, DEDUP_MAC_ZEROBLOCK);
-	//XXX: supply the hash as char array and compare directly.
 }
 
 void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash)
@@ -804,6 +803,21 @@ wakeup(vol_buf_q *bufq)
 		ESTR_COND_BROADCAST);
 	die_if(pthread_mutex_unlock(&(bufq->mtx)) != 0,
 		ESTR_MUTEX_UNLOCK);
+}
+
+void init_zero_block() {
+	uint8_t h[DEDUP_MAC_SIZE / 4 + 1];
+	g_zeroblock = malloc(g_block_size);
+	die_if(!g_zeroblock, ESTR_MALLOC);
+	memset(g_zeroblock, 0x00, g_block_size);
+	mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
+	dedup_hash_sprint(g_zeroblock_hash, h);
+	TAMP_LOG("init_zero_block: zeroblock hash is %s\n", h);
+}
+
+static int dedup_is_zero_chunk(u_int8_t *hash) {
+	if (!g_zeroblock) init_zero_block();
+	return !memcmp(hash, g_zeroblock_hash, DEDUP_MAC_SIZE / 8);
 }
 
 //~ /* ======================================================================== */
@@ -1550,7 +1564,7 @@ static void parse_json(int fd)
 	vdie_if_n(g_block_size != 1024*1024 && g_block_size != 4096*1024, "unsupported block size %lu\n", g_block_size);
 
 	TAMP_LOG("version: %d\n", g_version);
-	TAMP_LOG("blocksize_kb: %u\n", g_block_size);
+	TAMP_LOG("blocksize: %u\n", g_block_size);
 	TAMP_LOG("size: %lu\n", g_filesize);
 
 	vdie_if_n(g_block_count != (g_filesize + g_block_size - 1) / (g_block_size), "invalid number of chunks: expected %lu found %lu\n", (g_filesize + g_block_size - 1) / (g_block_size), g_block_count);
@@ -1821,6 +1835,7 @@ main(int argc, char **argv)
 
 	if (g_opt_decompress) {
 		parse_json(read_fd);
+		init_zero_block();
 		if (g_opt_verify) verify_chunks(g_opt_verify);
 		decompress_fd(read_fd);
 	} else {
@@ -1832,6 +1847,8 @@ main(int argc, char **argv)
 	if (g_opt_verbose && g_opt_decompress) TAMP_LOG("%lu bytes written.\n",g_out_bytes);
 
 	TAMP_LOG("crc32c: %08x\n",crc32c);
+
+	free(g_zeroblock);
 
 	return (errors);
 }
