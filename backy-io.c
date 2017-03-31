@@ -811,7 +811,8 @@ wakeup(vol_buf_q *bufq)
 
 void init_zero_block() {
 	uint8_t h[DEDUP_MAC_SIZE / 4 + 1];
-	g_zeroblock = malloc(g_block_size);
+	if (g_zeroblock) return;
+	g_zeroblock = valloc(g_block_size);
 	die_if(!g_zeroblock, ESTR_MALLOC);
 	memset(g_zeroblock, 0x00, g_block_size);
 	mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
@@ -1785,6 +1786,7 @@ main(int argc, char **argv)
 
 	/* Default maximum threads */
 	g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
+    TAMP_LOG("pid: %d\n",getpid());
 
 	while ((c = getopt(argc, argv, "VtTdvci:o:b:m:p:X:")) != -1) {
 		switch (c) {
@@ -1812,6 +1814,7 @@ main(int argc, char **argv)
 			g_stats_path = optarg;
 			vdie_if((read_fd = open(optarg, O_RDONLY | O_LARGEFILE,
 				0)) < 0, "open: %s", optarg);
+			TAMP_LOG("input: %s\n", optarg);
 			break;
 		case 'o':
 			/* Output file specified */
@@ -1879,16 +1882,10 @@ main(int argc, char **argv)
 	vol_int_init(&g_output_buffers);
 	vol_int_init(&g_comp_buffers);
 
-    TAMP_LOG("pid: %d\n",getpid());
+	if (!read_fd) TAMP_LOG("input: (stdin)\n");
+	if (g_opt_decompress || g_opt_compress) TAMP_LOG("output: %s\n", g_write_fd > 1 ? g_out_path : "(stdout)");
 
-	if (g_opt_verbose > 1)
-		if (g_opt_decompress)
-			TAMP_LOG( "%s: max threads %lu\n",
-				g_arg0, g_max_threads);
-		else
-			TAMP_LOG(
-				"%s: block size %uKB, max threads %lu\n",
-				g_arg0, g_block_size / 1024, g_max_threads);
+	TAMP_LOG("max_threads: %d\n", g_max_threads);
 
 	if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
 		parse_json(read_fd);
