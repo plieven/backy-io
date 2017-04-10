@@ -437,13 +437,16 @@ int file_exists(u_int8_t * filename)
     return 0;
 }
 
-void dedup_mkdir(u_int8_t * dir) {
+int dedup_mkdir(u_int8_t * dir) {
       int ret;
-      ret=mkdir(dir,0755);
-      vdie_if((ret && (errno != EEXIST)),
-       "mkdir: %s", dir);
+      ret = mkdir(dir, 0755) ? errno : 0;
+      vdie_if((ret && (ret != EEXIST)), "mkdir: %s", dir);
+      if (g_opt_verbose && !ret) {
+          TAMP_LOG("mkdir: %s", dir);
+      }
+      return ret;
 }
-//~ 
+
 void dedup_hash_mkdir(u_int8_t * hash)
 {
 	  u_int8_t dir[DEDUP_HASH_FILENAME_MAX];
