@@ -222,8 +222,9 @@ static vol_int comp_q_alloc;	/* Buffers allocated for (de)compression */
 #endif
 
 static char *g_arg0;		/* Program name */
-static char *g_out_path;	/* Output file */
-static char *g_dedup_dir = "chunks";   /* directory with dedup tables */
+static char *g_in_path = NULL;  	/* Input file */
+static char *g_out_path = NULL;	/* Output file */
+static char *g_chunk_dir = NULL;   /* directory with dedup tables */
 
 static int g_write_fd;		/* File descriptor to output to */
 
@@ -446,9 +447,9 @@ void dedup_mkdir(u_int8_t * dir) {
 void dedup_hash_mkdir(u_int8_t * hash)
 {
 	  u_int8_t dir[DEDUP_HASH_FILENAME_MAX];
-	  snprintf(dir,DEDUP_HASH_FILENAME_MAX,"%s/%02x",g_dedup_dir,hash[0]);
+	  snprintf(dir,DEDUP_HASH_FILENAME_MAX,"%s/%02x",g_chunk_dir,hash[0]);
 	  dedup_mkdir(dir);
-	  snprintf(dir,DEDUP_HASH_FILENAME_MAX,"%s/%02x/%02x",g_dedup_dir,hash[0],hash[1]);
+	  snprintf(dir,DEDUP_HASH_FILENAME_MAX,"%s/%02x/%02x",g_chunk_dir,hash[0],hash[1]);
 	  dedup_mkdir(dir);
 }
 
@@ -462,12 +463,12 @@ static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
 void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash)
 {
 	int i;
-	snprintf(filename,DEDUP_HASH_FILENAME_MAX, "%s/%02x/%02x/", g_dedup_dir, hash[0], hash[1]);
+	snprintf(filename,DEDUP_HASH_FILENAME_MAX, "%s/%02x/%02x/", g_chunk_dir, hash[0], hash[1]);
 	for (i=0; i < DEDUP_MAC_SIZE / 8;i++) {
-		sprintf(filename + i * 2 + strlen(g_dedup_dir) + 2 * 3 + 1, "%02x", hash[i]);
+		sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, "%02x", hash[i]);
 	}
 	if (g_version == 1) {
-		sprintf(filename + i * 2 + strlen(g_dedup_dir) + 2 * 3 + 1, ".chunk.lzo");
+		sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, ".chunk.lzo");
 	}
 }
 
@@ -1811,6 +1812,7 @@ main(int argc, char **argv)
 			/* Input file specified */
 			g_single_file++;
 			g_stats_path = optarg;
+			g_in_path = optarg;
 			vdie_if((read_fd = open(optarg, O_RDONLY | O_LARGEFILE,
 				0)) < 0, "open: %s", optarg);
 			TAMP_LOG("input: %s\n", optarg);
@@ -1833,7 +1835,7 @@ main(int argc, char **argv)
 			break;
 		case 'X':
 		    g_opt_dedup=1;
-		    g_dedup_dir = optarg;
+		    g_chunk_dir = strdup(optarg);
 		    //TAMP_LOG("enabling dedup with digest %s\n", DEDUP_MAC_NAME);
 		    break;
 		default:
@@ -1843,12 +1845,10 @@ main(int argc, char **argv)
 
 	if (g_opt_compress + g_opt_decompress + g_opt_verify + g_opt_verify_simple != 1) opt_error++;
 
-	if (g_single_file && (argc != optind))
-		/*
-		 * We can run on a single file, potentially with
-		 * -i/-o, or with a list given as args
-		 */
+	if ((g_opt_compress && !g_out_path) || (!g_opt_compress && !g_in_path)) {
 		opt_error++;
+	}
+
 	if (opt_error) {
 		TAMP_LOG("operations:\n"
 			" DECOMPRESS TO STDOUT: %s -d -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
@@ -1868,9 +1868,6 @@ main(int argc, char **argv)
 	}
 
     TAMP_LOG("pid: %d\n",getpid());
-
-	if (optind == argc)
-		g_single_file = 1;
 
 	/*
 	 * Initialise buffer queues
@@ -1894,6 +1891,15 @@ main(int argc, char **argv)
 
 	TAMP_LOG("max_threads: %lu\n", g_max_threads);
 
+	if (!g_chunk_dir) {
+		g_chunk_dir = strdup(g_opt_compress ? g_out_path : g_in_path);
+		dirname(g_chunk_dir);
+		g_chunk_dir = realloc(g_chunk_dir, strlen(g_chunk_dir) + 8);
+		sprintf(g_chunk_dir, "%s/chunks", g_chunk_dir);
+	}
+
+	TAMP_LOG("chunkdir: %s\n", g_chunk_dir);
+
 	if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
 		parse_json(read_fd);
 		verify_chunks();
@@ -1907,6 +1913,7 @@ main(int argc, char **argv)
 
 out:
 	free(g_zeroblock);
+	free(g_chunk_dir);
 	TAMP_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
 	return (errors);
 }
