@@ -1786,9 +1786,8 @@ main(int argc, char **argv)
 
 	/* Default maximum threads */
 	g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
-    TAMP_LOG("pid: %d\n",getpid());
 
-	while ((c = getopt(argc, argv, "VtTdvci:o:b:m:p:X:")) != -1) {
+	while ((c = getopt(argc, argv, "VtTdvci:o:b:p:X:")) != -1) {
 		switch (c) {
 		case 'V':
 			g_opt_verify_decompressed = 1;
@@ -1829,9 +1828,6 @@ main(int argc, char **argv)
 				"block size (%s KB) can not exceed %d\n",
 				optarg, MAX_CBLK_SIZE / 1024);
 			break;
-		case 'm':
-			g_min_threads = atol(optarg);
-			break;
 		case 'p':
 			g_max_threads = atol(optarg);
 			break;
@@ -1854,13 +1850,24 @@ main(int argc, char **argv)
 		 */
 		opt_error++;
 	if (opt_error) {
-		TAMP_LOG("TODO\n");
-			//~ "usage: %1$s [-dDvnc] [-p maxthr] [-m minthr]"
-			//~ " [-b blkKB] [-r readKB] [-i file] [-o file]\n"
-			//~ "or:    %1$s [-dDv] [-p p] [-m m] [-b b] [file ...]\n",
-			//~ g_arg0);
+		TAMP_LOG("operations:\n"
+			" DECOMPRESS TO STDOUT: %s -d -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
+			" DECOMPRESS TO FILE:   %s -d -i <infile> -o <outfile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
+			" COMPRESS FROM STDIN:  %s -c -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir]\n"
+			" COMPRESS FROM FILE:   %s -c -i <infile> -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir]\n"
+			" VERIFY SIMPLE:        %s -T -i <infile> [-v] [-X chunkdir]\n"
+			" VERIFY DEEP:          %s -t -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n\n"
+			"options: \n"
+			" -v verbose (repeat to increase verbosity)\n"
+			" -V verify decompressed chunks\n"
+			" -p <num> maximum number of threads\n"
+			" -b <num> blocksize in KB\n"
+			" -X <dir> directory where the chunks are\n",
+			g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0);
 		exit(2);
 	}
+
+    TAMP_LOG("pid: %d\n",getpid());
 
 	if (optind == argc)
 		g_single_file = 1;
