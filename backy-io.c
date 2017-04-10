@@ -1885,12 +1885,12 @@ main(int argc, char **argv)
 	if (!read_fd) TAMP_LOG("input: (stdin)\n");
 	if (g_opt_decompress || g_opt_compress) TAMP_LOG("output: %s\n", g_write_fd > 1 ? g_out_path : "(stdout)");
 
-	TAMP_LOG("max_threads: %d\n", g_max_threads);
+	TAMP_LOG("max_threads: %lu\n", g_max_threads);
 
 	if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
 		parse_json(read_fd);
 		verify_chunks();
-		if (g_opt_verify_simple) exit(0);
+		if (g_opt_verify_simple) goto out;
 		init_zero_block();
 		decompress_fd(g_opt_decompress ? read_fd : -1);
 	} else {
@@ -1898,7 +1898,8 @@ main(int argc, char **argv)
 		compress_fd(read_fd);
 	}
 
+out:
 	free(g_zeroblock);
-
+	TAMP_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
 	return (errors);
 }
