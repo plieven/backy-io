@@ -844,7 +844,7 @@ write_compressed(void *arg)
         (void) decrement(&g_output_buffers);
 
         length = bufp->length.val;
-        assert(length <= g_block_size);
+        assert(g_version == 1 || length <= g_block_size);
 
         if (g_opt_verbose > 1) {
             TAMP_LOG("write: seq %lu dedup_exists %d is_compressed %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, bufp->length.val);
@@ -990,7 +990,7 @@ compress(void *arg)
         comp_bufp->seq = sequence;
 
         /* Did we get negative compression? */
-        if (comp_bufp->length.val >= g_block_size &&
+        if (g_version > 1 && comp_bufp->length.val >= g_block_size &&
             bufp->length.val == g_block_size) {
             /* Yes - write out original block */
             put_last(&in_q_free, comp_bufp);
@@ -1001,7 +1001,7 @@ compress(void *arg)
              * thread's free list, and the decompressed buffer
              * on to the queue for the write thread.
              */
-            memcpy(&comp_bufp->hash,&bufp->hash, DEDUP_MAC_SIZE / 8);
+            memcpy(&comp_bufp->hash, &bufp->hash, DEDUP_MAC_SIZE / 8);
             put_last(&in_q_free, bufp);
             put_last(&comp_q_dirty, comp_bufp);
         }
@@ -1661,8 +1661,11 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "VtTdvci:o:b:p:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTdvci:o:b:p:X:")) != -1) {
         switch (c) {
+        case '1':
+            g_version = 1;
+            break;
         case 'V':
             g_opt_verify_decompressed = 1;
             break;
@@ -1720,17 +1723,22 @@ main(int argc, char **argv)
         opt_error++;
     }
 
+    if (g_version == 1 && g_block_size != 4 * 1024 * 1024) {
+        opt_error++;
+    }
+
     if (opt_error) {
         TAMP_LOG("operations:\n"
             " DECOMPRESS TO STDOUT: %s -d -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
             " DECOMPRESS TO FILE:   %s -d -i <infile> -o <outfile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
-            " COMPRESS FROM STDIN:  %s -c -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir]\n"
-            " COMPRESS FROM FILE:   %s -c -i <infile> -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir]\n"
+            " COMPRESS FROM STDIN:  %s -c -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
+            " COMPRESS FROM FILE:   %s -c -i <infile> -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
             " VERIFY SIMPLE:        %s -T -i <infile> [-v] [-X chunkdir]\n"
             " VERIFY DEEP:          %s -t -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n\n"
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
+            " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
             " -p <num> maximum number of threads\n"
             " -b <num> blocksize in KB\n"
             " -X <dir> directory where the chunks are\n",
