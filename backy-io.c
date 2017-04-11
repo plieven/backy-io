@@ -785,6 +785,7 @@ write_compressed(void *arg)
 
     fprintf(fp, "{\n");
     fprintf(fp, " \"version\" : %d,\n", g_version);
+    fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
     fprintf(fp, " \"mapping\" : {");
 
     seq = 0;
@@ -1393,6 +1394,9 @@ static void parse_json(int fd)
         } else if (jsoneq(buf, tok + i, "blocksize") == 0) {
             g_block_size = strtol(buf + (tok + i + 1)->start, NULL, 0);
             i++;
+        } else if (jsoneq(buf, tok + i, "hash") == 0) {
+            i++;
+            vdie_if_n((tok + i)->end - (tok + i)->start != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, buf + (tok + i)->start, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
         } else if (jsoneq(buf, tok + i, "crc32c") == 0) {
             crc32c_expected = (hex2dec(buf[(tok + i + 1)->start + 0]) << 28) +
                               (hex2dec(buf[(tok + i + 1)->start + 1]) << 24) +
