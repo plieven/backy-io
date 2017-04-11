@@ -16,27 +16,6 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#ifndef F_LINUX_SPECIFIC_BASE
-#define F_LINUX_SPECIFIC_BASE       1024
-#endif
-#ifndef F_SETPIPE_SZ
-#define F_SETPIPE_SZ    (F_LINUX_SPECIFIC_BASE + 7)
-#endif
-#ifndef F_GETPIPE_SZ
-#define F_GETPIPE_SZ    (F_LINUX_SPECIFIC_BASE + 8)
-#endif
-
-#pragma ident   "@(#)tamp.c 2.5 09/02/03 tim.cook@sun.com"
-
-/* Is this GNU/Linux? */
-#if defined(__linux__) || defined(__linux) || defined(linux)
-#define OS_LINUX    1
-#endif
-
-#ifndef _REENTRANT
-#define _REENTRANT
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -54,29 +33,15 @@
 
 #include "jsmn/jsmn.h"
 
-#ifdef OS_SOLARIS
-#include <sys/isa_defs.h>
-#include <netinet/in.h>     /* _BIG_ENDIAN */
-#endif /* OS_SOLARIS */
-
-#ifdef OS_LINUX
 #include <stdint.h>
 #include <malloc.h>     /* valloc() */
-#include <endian.h>     /* __BYTE_ORDER = __{BIG,LITTLE}_ENDIAN */
-#if (__BYTE_ORDER == __BIG_ENDIAN)
-#define _BIG_ENDIAN
-#endif
-#ifndef O_LARGEFILE
-#define O_LARGEFILE 0
-#endif
-#endif /* OS_LINUX */
 
 #define CBLK_SIZE       1024*1024   /* Default block size - 1024KB */
 #define MAX_CBLK_SIZE       4*1024*1024 /* 4MiB */
 #define MAX_OUTPUT_BUFFERS  64
 
 #include "smhasher/src/MurmurHash3.h"
-#define DEDUP_MAC_NAME "mmh3"
+#define DEDUP_MAC_NAME "mmh3-x64-128"
 #define DEDUP_MAC_SIZE 128
 #define DEDUP_HASH_FILENAME_MAX 512
 #define mmh3 _Z19MurmurHash3_x64_128PKvijPv
@@ -94,19 +59,9 @@ pthread_mutex_t log_mutex;
         pthread_mutex_unlock(&log_mutex); \
     } while (0)
 
-//~ #undef QUICKLZ
-#define LZO     1 
-
-#ifdef LZO
 #include <lzo/lzoconf.h>
 #include <lzo/lzo1x.h>
-#define MAGIC_STRING        "t1o1"      /* LZO1X 2.20 */
-#define MAGIC_STRING_LENGTH 4
 #define COMPRESS_OVERHEAD   MAX_CBLK_SIZE / 64 + 16 + 3
-#endif
-
-MD5_CTX md5_c;
-u_int8_t md5_digest[MD5_DIGEST_LENGTH];
 
 static uint32_t crc32c = 0xffffffff;
 static uint32_t crc32c_expected = 0xffffffff;
@@ -916,10 +871,8 @@ compress(void *arg)
 #endif
 
     (void) increment(&g_compress_threads);
-#ifdef LZO
     /* Need to initialise work_buf */
     work_buf = valloc(LZO1X_1_MEM_COMPRESS);
-#endif
     die_if(! work_buf, ESTR_MEMALIGN);
 
     /*CONSTCOND*/
@@ -1015,9 +968,7 @@ compress(void *arg)
     set_last_block(&comp_q_dirty, in_q_dirty.last_block);
     if (in_q_dirty.last_block == sequence)
         wakeup(&comp_q_dirty);
-#if defined(LZO) || defined(QUICKLZ)
     free(work_buf);
-#endif
 
     Tdebug2("+ compress() - return; tid = %d, blocks = %d\n",
         pthread_self, blocks_compressed);
@@ -1042,9 +993,7 @@ compress_fd(int fd)
     unsigned long sequence = 0;
     unsigned long i;
     vol_buf *bufp;
-#ifdef LZO
     int ret;
-#endif
 
     assert(vol_int_get(&g_compress_threads) == 0);
     assert(vol_int_get(&g_comp_idle) == 0);
@@ -1265,9 +1214,7 @@ static void *
 decompress(void *arg)
 {
     vol_buf *bufp, *comp_bufp;
-#ifdef LZO
     int ret;
-#endif
 #ifndef NDEBUG
     int blocks_compressed = 0;
 #endif
@@ -1541,13 +1488,11 @@ decompress_fd(int fd)
         (void) vol_int_set(&in_q_alloc, 0);
 #endif
 
-#ifdef LZO
     /* Initialize LZ01X-1 */
     if ((ret = lzo_init()) != LZO_E_OK) {
         diag(-1, "lzo_init failed (%d)\n", ret);
         exit(1);
     }
-#endif
 
     /* Initialize compress thread attributes */
     thr_die_iferr(pthread_attr_init(&compress_thr_attr),
@@ -1729,12 +1674,12 @@ main(int argc, char **argv)
 
     if (opt_error) {
         TAMP_LOG("operations:\n"
-            " DECOMPRESS TO STDOUT: %s -d -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile> -o <outfile> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
-            " COMPRESS FROM STDIN:  %s -c -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
-            " COMPRESS FROM FILE:   %s -c -i <infile> -o <outfile> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
-            " VERIFY SIMPLE:        %s -T -i <infile> [-v] [-X chunkdir]\n"
-            " VERIFY DEEP:          %s -t -i <infile> [-v] [-V] [-m maxthr] [-X chunkdir]\n\n"
+            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
+            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
+            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
+            " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-X chunkdir]\n"
+            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-m maxthr] [-X chunkdir]\n\n"
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
