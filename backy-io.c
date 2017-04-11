@@ -35,8 +35,9 @@
 #include <stdint.h>
 #include <malloc.h>     /* valloc() */
 
-#define CBLK_SIZE       1024*1024   /* Default block size - 1024KB */
-#define MAX_CBLK_SIZE       4*1024*1024 /* 4MiB */
+#define CBLK_SIZE           (4*1024*1024)  /* Default block size - 4096KB */
+#define MIN_CBLK_SIZE       (64*1024)     /* 256KByte */
+#define MAX_CBLK_SIZE       (16*1024*1024) /* 16MiB */
 #define MAX_OUTPUT_BUFFERS  64
 
 #include "smhasher/src/MurmurHash3.h"
@@ -60,7 +61,7 @@ pthread_mutex_t log_mutex;
 
 #include <lzo/lzoconf.h>
 #include <lzo/lzo1x.h>
-#define COMPRESS_OVERHEAD   MAX_CBLK_SIZE / 64 + 16 + 3
+#define COMPRESS_OVERHEAD   g_block_size / 64 + 16 + 3
 
 static uint32_t crc32c = 0xffffffff;
 static uint32_t crc32c_expected = 0xffffffff;
@@ -207,7 +208,7 @@ static char *g_stats_path = "(stdin)";
 static void *g_zeroblock = NULL;
 
 /* defaults */
-static unsigned int g_block_size = 4096 * 1024;
+static unsigned int g_block_size = CBLK_SIZE;
 static unsigned int g_version = 1;
 static uint64_t g_filesize = 0;     /* size of the uncompressed data */
 static uint64_t g_block_count = 0;
@@ -786,6 +787,7 @@ write_compressed(void *arg)
     fprintf(fp, "{\n");
     fprintf(fp, " \"version\" : %d,\n", g_version);
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
+    fprintf(fp, " \"blocksize\" : %u,\n", g_block_size);
     fprintf(fp, " \"mapping\" : {");
 
     seq = 0;
@@ -840,12 +842,11 @@ write_compressed(void *arg)
 
     fprintf(fp, "\n },\n");
 
-    TAMP_LOG("size: %lu\n", g_in_bytes);
     if (crc32c != 0xffffffff) {
         TAMP_LOG("crc32c: %08x\n", crc32c);
         fprintf(fp, " \"crc32c\" : \"%08x\",\n", crc32c);
     }
-    fprintf(fp, " \"blocksize\" : %u,\n", g_block_size);
+    TAMP_LOG("size: %lu\n", g_in_bytes);
     fprintf(fp, " \"size\" : %lu\n", g_in_bytes);
     fprintf(fp, "}\n");
     fclose(fp);
@@ -1271,7 +1272,7 @@ decompress(void *arg)
         close(read_fd_dedup);
         g_in_bytes += bufp->length.val;
         if (g_opt_verbose > 1) {
-                  TAMP_LOG("dedup: successfully read %lu bytes from %s %lu\n",bufp->length.val,dedup_file,bufp->bytes);
+                  TAMP_LOG("dedup: successfully read %lu bytes from %s\n",bufp->length.val,dedup_file);
         }
 
         /* Set the sequence number */
@@ -1435,7 +1436,8 @@ static void parse_json(int fd)
     }
 
     vdie_if_n(g_version < 1 || g_version > 2, "unsupported version %d\n", g_version);
-    vdie_if_n(g_block_size != 1024*1024 && g_block_size != 4096*1024, "unsupported block size %lu\n", g_block_size);
+    vdie_if_n(g_version == 1 && g_block_size != 4096*1024, "unsupported version 1 block size %lu\n", g_block_size);
+    vdie_if_n(g_block_size % MIN_CBLK_SIZE || g_block_size < MIN_CBLK_SIZE || g_block_size > MAX_CBLK_SIZE, "unsupported block size %lu\n", g_block_size);
 
     TAMP_LOG("version: %d\n", g_version);
     TAMP_LOG("blocksize: %u\n", g_block_size);
@@ -1652,6 +1654,12 @@ main(int argc, char **argv)
             vdie_if_n(g_block_size > MAX_CBLK_SIZE,
                 "block size (%s KB) can not exceed %d\n",
                 optarg, MAX_CBLK_SIZE / 1024);
+            vdie_if_n(g_block_size < MIN_CBLK_SIZE,
+                "block size (%s KB) can not be less than %d\n",
+                optarg, MIN_CBLK_SIZE / 1024);
+            vdie_if_n(g_block_size % MIN_CBLK_SIZE,
+                "block size (%s KB) is not a multiple of %d\n",
+                optarg, MIN_CBLK_SIZE / 1024);
             break;
         case 'p':
             g_max_threads = atol(optarg);
@@ -1688,7 +1696,7 @@ main(int argc, char **argv)
             " -V verify decompressed chunks\n"
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
             " -p <num> maximum number of threads\n"
-            " -b <num> blocksize in KB\n"
+            " -b <num> blocksize in KB (64 kByte to 16 MiB in 64 KiB steps)\n"
             " -X <dir> directory where the chunks are\n",
             g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0);
         exit(2);
