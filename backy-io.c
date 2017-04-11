@@ -29,7 +29,6 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <pthread.h>
-#include <openssl/md5.h>
 
 #include "jsmn/jsmn.h"
 
