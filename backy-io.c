@@ -147,7 +147,7 @@ typedef struct vol_buf {
     char hash[DEDUP_MAC_SIZE/8];
     u_int8_t _align[7];
     ulong_4char length;     /* How much is used */
-    unsigned char buf[CBLK_SIZE];   /* the storage - may be more */
+    unsigned char buf[MIN_CBLK_SIZE];   /* the storage - may be more */
 } vol_buf;
 
 /*
@@ -438,7 +438,7 @@ vol_buf_new(unsigned long bytes)
      * but instead allocate enough storage for "buf" to hold the
      * number of bytes requested
      */
-    vb = (vol_buf *)memalign(4, sizeof (vol_buf) - CBLK_SIZE + bytes);
+    vb = (vol_buf *)memalign(4, sizeof (vol_buf) - MIN_CBLK_SIZE + bytes);
     die_if(vb == (vol_buf *)NULL, ESTR_MEMALIGN);
     vb->bytes = bytes;
     vb->length.val = 0;
@@ -888,8 +888,7 @@ compress(void *arg)
             else {
                 /* Get a new buffer */
                 comp_bufp = vol_buf_new(g_block_size +
-                    COMPRESS_OVERHEAD +
-                    sizeof (bufp->length));
+                    COMPRESS_OVERHEAD);
 #ifndef NDEBUG
                 (void) increment(&comp_q_alloc);
 #endif
@@ -1036,8 +1035,7 @@ compress_fd(int fd)
             bufp = get_first(&in_q_free, NOWAIT);
             if (! bufp) {
                 bufp = vol_buf_new(g_block_size +
-                    COMPRESS_OVERHEAD +
-                    sizeof (bufp->length));
+                    COMPRESS_OVERHEAD);
 #ifndef NDEBUG
                 (void) increment(&in_q_alloc);
 #endif
@@ -1234,8 +1232,7 @@ decompress(void *arg)
             else {
                 /* Get a new buffer */
                 comp_bufp = vol_buf_new(g_block_size +
-                    COMPRESS_OVERHEAD +
-                    sizeof (comp_bufp->length));
+                    COMPRESS_OVERHEAD);
 #ifndef NDEBUG
                 (void) increment(&comp_q_alloc);
 #endif
@@ -1528,8 +1525,7 @@ decompress_fd(int fd)
             bufp = get_first(&in_q_free, NOWAIT);
             if (! bufp) {
                 bufp = vol_buf_new(g_block_size +
-                    COMPRESS_OVERHEAD +
-                    sizeof (bufp->length));
+                    COMPRESS_OVERHEAD);
 #ifndef NDEBUG
                 (void) increment(&in_q_alloc);
 #endif
