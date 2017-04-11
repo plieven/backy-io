@@ -492,7 +492,7 @@ vol_buf_q_reinit(vol_buf_q *bufq, unsigned int block_size)
     }
     assert(bufq->last != (vol_buf *)NULL);
     assert(bufq->buffers != 0);
-    if (bufq->block_size < block_size) {
+    if (bufq->block_size < block_size || !block_size) {
         /* Need re-initialization */
         /* First, free any existing vol_buf's */
         vol_buf *f, *n;
@@ -1747,8 +1747,11 @@ main(int argc, char **argv)
     }
 
 out:
+    vol_buf_q_reinit(&in_q_free, 0);
+    vol_buf_q_reinit(&comp_q_free, 0);
     free(g_zeroblock);
     free(g_chunk_dir);
+    free(g_block_mapping);
     TAMP_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
     return (errors);
 }
