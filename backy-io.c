@@ -1700,12 +1700,12 @@ main(int argc, char **argv)
 
     if (opt_error) {
         TAMP_LOG("operations:\n"
-            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m maxthr] [-X chunkdir]\n"
-            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
-            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m maxthr] [-X chunkdir] [-1]\n"
+            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-p maxthr] [-X chunkdir]\n"
+            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-p maxthr] [-X chunkdir] [-1]\n"
+            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-p maxthr] [-X chunkdir] [-1]\n"
             " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-X chunkdir]\n"
-            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-m maxthr] [-X chunkdir]\n\n"
+            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-p maxthr] [-X chunkdir]\n\n"
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
