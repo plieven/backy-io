@@ -59,8 +59,7 @@ pthread_mutex_t log_mutex;
         pthread_mutex_unlock(&log_mutex); \
     } while (0)
 
-#include <lzo/lzoconf.h>
-#include <lzo/lzo1x.h>
+#include "minilzo/minilzo.h"
 #define COMPRESS_OVERHEAD   g_block_size / 64 + 16 + 3
 
 static uint32_t crc32c = 0xffffffff;
