@@ -213,6 +213,7 @@ static unsigned int g_version = 1;
 static uint64_t g_filesize = 0;     /* size of the uncompressed data */
 static uint64_t g_block_count = 0;
 static char* g_block_mapping = NULL;
+static uint8_t* g_block_is_compressed = NULL;
 static char g_zeroblock_hash[DEDUP_MAC_SIZE/8];
 
 static unsigned int g_opt_dedup = 1;
@@ -418,14 +419,14 @@ static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     }
 }
 
-void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash)
+void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash, int compressed)
 {
     int i;
     snprintf(filename,DEDUP_HASH_FILENAME_MAX, "%s/%02x/%02x/", g_chunk_dir, hash[0], hash[1]);
     for (i=0; i < DEDUP_MAC_SIZE / 8;i++) {
         sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, "%02x", hash[i]);
     }
-    sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, g_version == 2 ? ".chunk" : ".chunk.lzo");
+    sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, compressed ? ".chunk.lzo" : ".chunk");
 }
 
 static vol_buf *
@@ -809,7 +810,7 @@ write_compressed(void *arg)
         if (!bufp->dedup_exists) {
             int g_write_fd_dedup;
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
-            dedup_hash_filename(dedup_filename, &bufp->hash[0]);
+            dedup_hash_filename(dedup_filename, &bufp->hash[0], bufp->is_compressed);
             dedup_hash_mkdir(bufp->hash);
             g_write_fd_dedup = open(dedup_filename,
               O_WRONLY | O_LARGEFILE | O_CREAT | O_EXCL, 0666);
@@ -915,8 +916,14 @@ compress(void *arg)
         if (bufp->length.val > 0) {
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
             mmh3(&(bufp->buf), bufp->length.val, 0, &bufp->hash[0]);
-            dedup_hash_filename(dedup_filename, &bufp->hash[0]);
-            comp_bufp->dedup_exists=bufp->dedup_exists=file_exists(dedup_filename);
+            dedup_hash_filename(dedup_filename, &bufp->hash[0], 1);
+            comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename);
+            comp_bufp->is_compressed = 1;
+            if (!bufp->dedup_exists && g_version > 1) {
+                dedup_hash_filename(dedup_filename, &bufp->hash[0], 0);
+                comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename);
+                comp_bufp->is_compressed = 0;
+            }
         }
 
         if (!bufp->dedup_exists)
@@ -943,9 +950,11 @@ compress(void *arg)
         comp_bufp->seq = sequence;
 
         /* Did we get negative compression? */
-        if (g_version > 1 && comp_bufp->length.val >= g_block_size &&
+        if (!bufp->dedup_exists && g_version > 1 &&
+            comp_bufp->length.val >= g_block_size &&
             bufp->length.val == g_block_size) {
             /* Yes - write out original block */
+            comp_bufp->is_compressed = 0;
             put_last(&in_q_free, comp_bufp);
             put_last(&comp_q_dirty, bufp);
         } else {
@@ -1259,12 +1268,13 @@ decompress(void *arg)
             continue;
         }
         
-          int read_fd_dedup;
-          u_int8_t dedup_file[DEDUP_HASH_FILENAME_MAX];
-          dedup_hash_filename(dedup_file, g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8);
-          vdie_if((read_fd_dedup = open(dedup_file,
-                  O_RDONLY)) < 0,
-                   "open: %s", dedup_file);
+        int read_fd_dedup;
+        u_int8_t dedup_file[DEDUP_HASH_FILENAME_MAX];
+        dedup_hash_filename(dedup_file, g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8,
+                            g_block_is_compressed[bufp->seq]);
+        vdie_if((read_fd_dedup = open(dedup_file,
+                O_RDONLY)) < 0,
+                "open: %s", dedup_file);
         die_if((bufp->length.val = read(read_fd_dedup,(void *)&(bufp->buf), bufp->bytes)) < 0,ESTR_FREAD);
         close(read_fd_dedup);
         g_in_bytes += bufp->length.val;
@@ -1413,6 +1423,8 @@ static void parse_json(int fd)
             die_if(g_block_mapping, ESTR_MALLOC);
             g_block_mapping = malloc((DEDUP_MAC_SIZE / 8) * g_block_count);
             die_if(!g_block_mapping, ESTR_MALLOC);
+            g_block_is_compressed = malloc(g_block_count);
+            die_if(!g_block_is_compressed, ESTR_MALLOC);
             for (j = i; j < i + g_block_count * 2; j += 2) {
                 unsigned long seq = strtol(buf + (tok + j)->start, NULL, 0);
                 vdie_if_n(seq != (j - i) / 2, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", (j - i) / 2, seq);
@@ -1453,9 +1465,17 @@ void verify_chunks() {
     u_int8_t chunk_file[DEDUP_HASH_FILENAME_MAX];
     int i;
     for (i = 0; i < g_block_count; i++) {
+        uint8_t dedup_exists;
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE / 8)) continue;
-        dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8);
-        vdie_if_n(!file_exists(chunk_file), "verify: chunk %s does not exist\n", chunk_file);
+        dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8, 1);
+        dedup_exists = file_exists(chunk_file);
+        g_block_is_compressed[i] = 1;
+        if (!dedup_exists && g_version > 1) {
+            dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8, 0);
+            dedup_exists = file_exists(chunk_file);
+            g_block_is_compressed[i] = 0;
+        }
+        vdie_if_n(!dedup_exists, "verify: chunk %s does not exist\n", chunk_file);
     }
     TAMP_LOG("verify_simple: all chunks available\n");
 }
@@ -1748,6 +1768,7 @@ out:
     free(g_zeroblock);
     free(g_chunk_dir);
     free(g_block_mapping);
+    free(g_block_is_compressed);
     TAMP_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
     return (errors);
 }
