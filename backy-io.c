@@ -1207,6 +1207,7 @@ write_decompressed(void *arg)
 
     if (crc32c_expected != 0xffffffff) {
         vdie_if_n(crc32c != crc32c_expected,"crc32c checksum failure: expected %08x computed %08x\n", crc32c_expected, crc32c);
+        TAMP_LOG("crc32c: %08x\n", crc32c);
         TAMP_LOG("verify_crc32: checksum correct\n");
     }
 
