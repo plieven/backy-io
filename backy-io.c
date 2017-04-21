@@ -1713,7 +1713,7 @@ main(int argc, char **argv)
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
             " -p <num> maximum number of threads\n"
             " -b <num> blocksize in KB (64 kByte to 16 MiB in 64 KiB steps)\n"
-            " -X <dir> directory where the chunks are\n",
+            " -X <dir> directory where the chunks are (defauls to chunks/ relative to json-file)\n",
             g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0);
         exit(2);
     }
