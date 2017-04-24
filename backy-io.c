@@ -1629,7 +1629,7 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTdvci:o:b:p:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTdvci:o:b:p:m:X:")) != -1) {
         switch (c) {
         case '1':
             g_version = 1;
@@ -1682,6 +1682,9 @@ main(int argc, char **argv)
         case 'p':
             g_max_threads = atol(optarg);
             break;
+        case 'm':
+            g_min_threads = atol(optarg);
+            break;
         case 'X':
             g_opt_dedup=1;
             g_chunk_dir = strdup(optarg);
@@ -1703,16 +1706,17 @@ main(int argc, char **argv)
 
     if (opt_error) {
         TAMP_LOG("operations:\n"
-            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-p maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-p maxthr] [-X chunkdir]\n"
-            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-p maxthr] [-X chunkdir] [-1]\n"
-            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-p maxthr] [-X chunkdir] [-1]\n"
+            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
+            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-X chunkdir]\n"
-            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-p maxthr] [-X chunkdir]\n\n"
+            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n\n"
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
+            " -m <num> minimum number of threads\n"
             " -p <num> maximum number of threads\n"
             " -b <num> blocksize in KB (64 kByte to 16 MiB in 64 KiB steps)\n"
             " -X <dir> directory where the chunks are (defauls to chunks/ relative to json-file)\n",
