@@ -775,6 +775,7 @@ write_compressed(void *arg)
     int dedup_new=0;
     int dedup_new_comp=0;
     int dedup_existing=0;
+    int zeroblocks=0;
     FILE *fp = stdout;
     uint8_t dedup_hash[DEDUP_MAC_SIZE / 4 + 1];
 
@@ -834,6 +835,11 @@ write_compressed(void *arg)
 
             dedup_hash_sprint(bufp->hash, &dedup_hash[0]);
             fprintf(fp, "%s\n  \"%lu\" : \"%s\"", seq ? "," : "", seq, dedup_hash);
+
+            if (dedup_is_zero_chunk(&bufp->hash[0])) {
+                zeroblocks++;
+            }
+
         }
 
         /* Buffer is now free */
@@ -853,7 +859,7 @@ write_compressed(void *arg)
     fprintf(fp, "}\n");
     fclose(fp);
 
-    TAMP_LOG("dedup: new %d new_compressed %d existing %d\n",dedup_new,dedup_new_comp,dedup_existing);
+    TAMP_LOG("dedup: new %d new_compressed %d existing %d zeroblocks %d\n", dedup_new, dedup_new_comp, dedup_existing, zeroblocks);
 
     return (NULL);
 }
