@@ -167,7 +167,7 @@ typedef struct vol_buf_q {
 
 /* ======================================================================== */
 
-static vol_buf_q in_q_free; /* Used for reading in data */
+static vol_buf_q in_q_free;     /* Used for reading in data */
 static vol_buf_q in_q_dirty;    /* Containing data to be processed */
 static vol_buf_q comp_q_free;   /* Used for output of compress/decompress */
 static vol_buf_q comp_q_dirty;  /* Containing data to be output */
@@ -195,8 +195,8 @@ static int g_opt_verify_simple     = 0;     /* Verify simple is set */
 static int g_opt_verify_decompressed     = 0;       /* Verify of decompressed chunks is set */
 
 static vol_int g_compress_threads;
-static vol_int g_comp_idle;     /* Zero IFF all (de)compress threads */
-                    /* are busy processing */
+static vol_int g_comp_idle;         /* Zero IFF all (de)compress threads */
+                                    /* are busy processing */
 static vol_int g_output_buffers;    /* Buffers to be output */
 static vol_int g_comp_buffers;      /* Buffers to be (de)compressed */
 
@@ -912,7 +912,6 @@ compress(void *arg)
             put_last(&comp_q_free, comp_bufp);
             break;
         }
-        (void) decrement(&g_comp_buffers);
 
         /* Compress */
         (void) decrement(&g_comp_idle);
@@ -950,7 +949,6 @@ compress(void *arg)
             }
        }
 
-        (void) increment(&g_comp_idle);
 
         /* Set the sequence number */
         sequence = bufp->seq;
@@ -977,7 +975,9 @@ compress(void *arg)
 #ifndef NDEBUG
         blocks_compressed++;
 #endif
+        (void) increment(&g_comp_idle);
         (void) increment(&g_output_buffers);
+        (void) decrement(&g_comp_buffers);
     }
     (void) decrement(&g_comp_idle);
 
@@ -1265,7 +1265,6 @@ decompress(void *arg)
             put_last(&comp_q_free, comp_bufp);
             break;
         }
-        (void) decrement(&g_comp_buffers);
         
         //XXX: avoid wasting a buffer for this?!
         if (dedup_is_zero_chunk(g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8)) {
@@ -1275,6 +1274,8 @@ decompress(void *arg)
             (void) increment(&g_output_buffers);
             continue;
         }
+
+        (void) decrement(&g_comp_idle);
         
         int read_fd_dedup;
         u_int8_t dedup_file[DEDUP_HASH_FILENAME_MAX];
@@ -1299,7 +1300,6 @@ decompress(void *arg)
             //XXX: verify if the hash is ok ?!
         } else {
             uint64_t expected_size = MIN(g_block_size, g_filesize - bufp->seq * g_block_size);
-            (void) decrement(&g_comp_idle);
             vdie_if_n(bufp->buf[0] != 0xf0 || bufp->length.val < 5 + 3, "lzo header error\n", 0);
             comp_bufp->length.val = (bufp->buf[1] << 24) | (bufp->buf[2] << 16) | (bufp->buf[3] << 8) | bufp->buf[4];
             vdie_if_n(comp_bufp->length.val < 0 || bufp->length.val - 5 > comp_bufp->length.val + comp_bufp->length.val / 64 + 16 + 3, "lzo header error\n", 0);
@@ -1317,8 +1317,6 @@ decompress(void *arg)
                 "return     = %d\n", g_arg0, ret);
                 exit(1);
             }
-            
-            (void) increment(&g_comp_idle);
             /*
              * Now post the input buffer back to the input
              * thread's free list, and the decompressed buffer
@@ -1330,7 +1328,9 @@ decompress(void *arg)
 #ifndef NDEBUG
         blocks_compressed++;
 #endif
+        (void) increment(&g_comp_idle);
         (void) increment(&g_output_buffers);
+        (void) decrement(&g_comp_buffers);
     }
     (void) decrement(&g_comp_idle);
     assert(in_q_dirty.last_block != 0);
