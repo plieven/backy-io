@@ -887,6 +887,7 @@ compress(void *arg)
     /*CONSTCOND*/
     while (1) {
         /* Get an output buffer */
+
         comp_bufp = get_first(&comp_q_free, NOWAIT);
         if (! comp_bufp) {
             /* THROTTLE: Wait if output queue is "full" */
@@ -903,6 +904,7 @@ compress(void *arg)
             }
         }
         assert(comp_bufp);
+        (void) increment(&g_output_buffers);
 
         /* Get a buffer to compress */
         bufp = get_first(&in_q_dirty, WAIT);
@@ -976,7 +978,6 @@ compress(void *arg)
         blocks_compressed++;
 #endif
         (void) increment(&g_comp_idle);
-        (void) increment(&g_output_buffers);
         (void) decrement(&g_comp_buffers);
     }
     (void) decrement(&g_comp_idle);
@@ -1057,6 +1058,7 @@ compress_fd(int fd)
 #endif
             }
         }
+        (void) increment(&g_comp_buffers);
         assert(bufp);
         readp = (unsigned char *)&(bufp->buf);
 
@@ -1085,7 +1087,6 @@ compress_fd(int fd)
 
         /* Post the buffer to be compressed */
         put_last(&in_q_dirty, bufp);
-        (void) increment(&g_comp_buffers);
 
         /* THROTTLE: Do we want to start another compress thread? */
         if (g_comp_idle.value < 1 &&
@@ -1173,7 +1174,6 @@ write_decompressed(void *arg)
                 assert(sequence > comp_q_dirty.last_block);
                 break;
             }
-            (void) decrement(&g_output_buffers);
 
             length = bufp->length.val;
             assert(MIN(length, g_filesize - g_out_bytes) == length);
@@ -1206,6 +1206,7 @@ write_decompressed(void *arg)
         if (!is_zero_chunk) {
             /* We can free that buffer */
             put_last(&comp_q_free, bufp);
+            (void) decrement(&g_output_buffers);
         }
 
         sequence++;
@@ -1260,6 +1261,7 @@ decompress(void *arg)
             }
         }
         assert(comp_bufp);
+        (void) increment(&g_output_buffers);
 
         /* Get a buffer to decompress */
         bufp = get_first(&in_q_dirty, WAIT);
@@ -1324,7 +1326,6 @@ decompress(void *arg)
         blocks_compressed++;
 #endif
         (void) increment(&g_comp_idle);
-        (void) increment(&g_output_buffers);
         (void) decrement(&g_comp_buffers);
     }
     (void) decrement(&g_comp_idle);
@@ -1558,6 +1559,7 @@ decompress_fd(int fd)
             }
         }
         assert(bufp);
+        (void) increment(&g_comp_buffers);
 
         bufp->seq = i;
 
@@ -1573,7 +1575,6 @@ decompress_fd(int fd)
                 decompress, NULL), ESTR_THREAD_CREATE);
         }
         put_last(&in_q_dirty, bufp);
-        (void) increment(&g_comp_buffers);
     }
 
     set_last_block(&in_q_dirty, i - 1);
