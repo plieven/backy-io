@@ -1162,47 +1162,51 @@ write_decompressed(void *arg)
     sequence = 0;
     /*CONSTCOND*/
     while (1) {
-        void *buf;
-        void *buf_hash;
-        bufp = get_seq(&comp_q_dirty, sequence);
-        if (! bufp) {
-            /* We missed g_last_block being set */
-            assert(sequence > comp_q_dirty.last_block);
-            break;
-        }
-        (void) decrement(&g_output_buffers);
+        void *buf = g_zeroblock;
+        size_t length = g_block_size;
+        void *buf_hash = g_block_mapping + sequence * DEDUP_MAC_SIZE / 8;
+        uint8_t is_zero_chunk = dedup_is_zero_chunk(buf_hash);
+        if (!is_zero_chunk) {
+            bufp = get_seq(&comp_q_dirty, sequence);
+            if (! bufp) {
+                /* We missed g_last_block being set */
+                assert(sequence > comp_q_dirty.last_block);
+                break;
+            }
+            (void) decrement(&g_output_buffers);
 
-        assert(MIN(bufp->length.val, g_filesize - g_out_bytes) == bufp->length.val);
+            length = bufp->length.val;
+            assert(MIN(length, g_filesize - g_out_bytes) == length);
+            buf = bufp->buf;
 
-        buf = bufp->buf;
-        buf_hash = g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8;
-        if (dedup_is_zero_chunk(buf_hash)) {
-            buf = g_zeroblock;
-        } else if (g_opt_verify_decompressed) {
-            char hash[DEDUP_MAC_SIZE/8];
-            char hash_c[DEDUP_MAC_SIZE/4+1];
-            char hash_e[DEDUP_MAC_SIZE/4+1];
-            mmh3(bufp->buf, bufp->length.val, 0, &hash[0]);
-            dedup_hash_sprint(&hash[0], hash_c);
-            dedup_hash_sprint(buf_hash, hash_e);
-            vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE / 8), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
-            if (g_opt_verbose > 1) {
-                TAMP_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
+            if (g_opt_verify_decompressed) {
+                char hash[DEDUP_MAC_SIZE/8];
+                char hash_c[DEDUP_MAC_SIZE/4+1];
+                char hash_e[DEDUP_MAC_SIZE/4+1];
+                mmh3(bufp->buf, length, 0, &hash[0]);
+                dedup_hash_sprint(&hash[0], hash_c);
+                dedup_hash_sprint(buf_hash, hash_e);
+                vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE / 8), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
+                if (g_opt_verbose > 1) {
+                    TAMP_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
+                }
             }
         }
 
         if (g_opt_decompress) {
-            die_if(write(g_write_fd, buf, bufp->length.val) < 0, ESTR_WRITE);
+            die_if(write(g_write_fd, buf, length) < 0, ESTR_WRITE);
         }
-        g_out_bytes += bufp->length.val;
-        crc32c = crc32c_hardware(crc32c,(const u_int8_t *) buf, bufp->length.val);
+        g_out_bytes += length;
+        crc32c = crc32c_hardware(crc32c,(const u_int8_t *) buf, length);
 
         if (g_opt_verbose) {
             TAMP_LOG("progress: %lu bytes processed.\n", g_out_bytes);
         }
 
-        /* We can free that buffer */
-        put_last(&comp_q_free, bufp);
+        if (!is_zero_chunk) {
+            /* We can free that buffer */
+            put_last(&comp_q_free, bufp);
+        }
 
         sequence++;
     }
@@ -1264,15 +1268,6 @@ decompress(void *arg)
             /* No longer need output buffer, so put it back */
             put_last(&comp_q_free, comp_bufp);
             break;
-        }
-        
-        //XXX: avoid wasting a buffer for this?!
-        if (dedup_is_zero_chunk(g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8)) {
-            put_last(&in_q_free, comp_bufp);
-            put_last(&comp_q_dirty, bufp);
-            bufp->length.val = g_block_size;
-            (void) increment(&g_output_buffers);
-            continue;
         }
 
         (void) decrement(&g_comp_idle);
@@ -1544,6 +1539,9 @@ decompress_fd(int fd)
         write_decompressed, NULL), ESTR_THREAD_CREATE);
 
     for (i = 0; i < g_block_count; i++) {
+        if (dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE / 8)) {
+            continue;
+        }
         /* Get a read buffer */
         if (g_comp_buffers.value >= MAX_OUTPUT_BUFFERS) {
             /* Allow buffers to drain */
