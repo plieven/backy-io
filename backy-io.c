@@ -190,6 +190,7 @@ static volatile uint64_t g_out_bytes = 0;   /* Bytes written */
 static int g_opt_verbose    = 0;        /* Verbose flag is set */
 static int g_opt_decompress = 0;    /* Decompress is set */
 static int g_opt_compress   = 0;        /* Compress is set */
+static int g_opt_update     = 0;        /* Update is set */
 static int g_opt_verify     = 0;        /* Verify is set */
 static int g_opt_verify_simple     = 0;     /* Verify simple is set */
 static int g_opt_verify_decompressed     = 0;       /* Verify of decompressed chunks is set */
@@ -740,7 +741,7 @@ wakeup(vol_buf_q *bufq)
 {
     Tdebug1("+  %d: wakeup(%x)\n", pthread_self(), bufq);
     die_if(pthread_mutex_lock(&(bufq->mtx)) != 0, ESTR_MUTEX_LOCK);
-    assert(bufq->last_block != 0);
+    if (!g_opt_update) assert(bufq->last_block != 0);
     die_if(pthread_cond_broadcast(&(bufq->cv)) != 0,
         ESTR_COND_BROADCAST);
     die_if(pthread_mutex_unlock(&(bufq->mtx)) != 0,
@@ -793,6 +794,17 @@ write_compressed(void *arg)
     seq = 0;
     /*CONSTCOND*/
     while (1) {
+        if (g_opt_update) {
+            if (seq == g_block_count) break;
+            if (memcmp(g_zeroblock, g_block_mapping + seq * DEDUP_MAC_SIZE / 8, DEDUP_MAC_SIZE / 8)) {
+                dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE / 8, &dedup_hash[0]);
+                fprintf(fp, "%s\n  \"%lu\" : \"%s\"", seq ? "," : "", seq, dedup_hash);
+                seq++;
+                dedup_existing++;
+                continue;
+            }
+        }
+
         bufp = get_seq(&comp_q_dirty, seq);
         if (! bufp) {
             assert(seq > comp_q_dirty.last_block);
@@ -835,8 +847,9 @@ write_compressed(void *arg)
         TAMP_LOG("crc32c: %08x\n", crc32c);
         fprintf(fp, " \"crc32c\" : \"%08x\",\n", crc32c);
     }
-    TAMP_LOG("size: %lu\n", g_in_bytes);
-    fprintf(fp, " \"size\" : %lu\n", g_in_bytes);
+
+    TAMP_LOG("size: %lu\n", g_opt_update ? g_filesize : g_in_bytes);
+    fprintf(fp, " \"size\" : %lu\n", g_opt_update ? g_filesize : g_in_bytes);
     fprintf(fp, "}\n");
     fclose(fp);
 
@@ -1050,6 +1063,19 @@ compress_fd(int fd)
 
     /*CONSTCOND*/
     while (1) {
+        if (g_opt_update) {
+            if (sequence == g_block_count) break;
+            if (memcmp(g_zeroblock, g_block_mapping + sequence * DEDUP_MAC_SIZE / 8, DEDUP_MAC_SIZE / 8)) {
+                sequence++;
+                g_in_bytes += g_block_size;
+                g_in_bytes = MIN(g_in_bytes, g_filesize);
+                continue;
+            }
+            if (sequence * g_block_size != lseek(fd, sequence * g_block_size, SEEK_SET)) {
+                TAMP_LOG("seek error.\n");
+                exit(1);
+            }
+        }
         /* Get a read buffer */
         if (g_comp_buffers.value >= MAX_OUTPUT_BUFFERS) {
             /* Allow buffers to drain */
@@ -1086,7 +1112,9 @@ compress_fd(int fd)
             readp += b;
         }
         g_in_bytes += (uint64_t)bytes;
-        crc32c=crc32c_hardware(crc32c,(const u_int8_t *) bufp->buf,bytes);
+        if (!g_opt_update) {
+            crc32c=crc32c_hardware(crc32c,(const u_int8_t *) bufp->buf,bytes);
+        }
         bufp->length.val = bytes;
         bufp->seq = sequence;
 
@@ -1478,6 +1506,7 @@ void verify_chunks() {
     for (i = 0; i < g_block_count; i++) {
         uint8_t dedup_exists;
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE / 8)) continue;
+        if (g_opt_update && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE / 8, DEDUP_MAC_SIZE / 8)) continue;
         dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8, 1);
         dedup_exists = file_exists(chunk_file);
         g_block_is_compressed[i] = 1;
@@ -1641,7 +1670,7 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTdvci:o:b:p:m:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTdvcui:o:b:p:m:X:")) != -1) {
         switch (c) {
         case '1':
             g_version = 1;
@@ -1663,6 +1692,10 @@ main(int argc, char **argv)
             break;
         case 'c':
             g_opt_compress = 1;
+            g_version = 2;
+            break;
+        case 'u':
+            g_opt_update = 1;
             g_version = 2;
             break;
         case 'i':
@@ -1706,9 +1739,13 @@ main(int argc, char **argv)
         }
     }
 
-    if (g_opt_compress + g_opt_decompress + g_opt_verify + g_opt_verify_simple != 1) opt_error++;
+    if (g_opt_compress + g_opt_decompress + g_opt_verify + g_opt_verify_simple + g_opt_update != 1) opt_error++;
 
     if ((g_opt_compress && !g_out_path) || (!g_opt_compress && !g_in_path)) {
+        opt_error++;
+    }
+
+    if (g_opt_update && (!g_out_path || !g_in_path)) {
         opt_error++;
     }
 
@@ -1722,6 +1759,7 @@ main(int argc, char **argv)
             " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
+            " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-X chunkdir]\n"
             " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n\n"
             "options: \n"
@@ -1732,7 +1770,7 @@ main(int argc, char **argv)
             " -p <num> maximum number of threads\n"
             " -b <num> blocksize in KB (64 kByte to 16 MiB in 64 KiB steps)\n"
             " -X <dir> directory where the chunks are (defauls to chunks/ relative to json-file)\n",
-            g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0);
+            g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0);
         exit(2);
     }
 
@@ -1761,7 +1799,7 @@ main(int argc, char **argv)
     TAMP_LOG("max_threads: %lu\n", g_max_threads);
 
     if (!g_chunk_dir) {
-        g_chunk_dir = strdup(g_opt_compress ? g_out_path : g_in_path);
+        g_chunk_dir = strdup((g_opt_compress || g_opt_update) ? g_out_path : g_in_path);
         dirname(g_chunk_dir);
         g_chunk_dir = realloc(g_chunk_dir, strlen(g_chunk_dir) + 8);
         sprintf(g_chunk_dir, "%s/chunks", g_chunk_dir);
@@ -1769,7 +1807,18 @@ main(int argc, char **argv)
 
     TAMP_LOG("chunkdir: %s\n", g_chunk_dir);
 
-    if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
+    if (g_opt_update) {
+        int write_fd;
+        struct stat st;
+        vdie_if((write_fd = open(g_out_path, O_RDONLY | O_LARGEFILE,
+                0)) < 0, "open: %s", optarg);
+        parse_json(write_fd);
+        close(write_fd);
+        verify_chunks();
+        vdie_if(fstat(read_fd, &st) < 0, "fstat failed", 0);
+        vdie_if(st.st_size != g_filesize, "input filesize does not match backup filesize (%lu != %lu)", st.st_size, g_filesize);
+        compress_fd(read_fd);
+    } else if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
         parse_json(read_fd);
         verify_chunks();
         if (g_opt_verify_simple) goto out;
