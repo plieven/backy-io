@@ -30,6 +30,7 @@
 #include <assert.h>
 #include <pthread.h>
 
+#define JSMN_STRICT
 #include "jsmn/jsmn.h"
 
 #include <stdint.h>
