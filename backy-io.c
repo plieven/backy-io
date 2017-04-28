@@ -1760,7 +1760,7 @@ main(int argc, char **argv)
             " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
-            " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
+            " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-X chunkdir]\n"
             " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n\n"
             "options: \n"
