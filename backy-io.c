@@ -205,6 +205,7 @@ static uint64_t g_block_count = 0;
 static char* g_block_mapping = NULL;
 static uint8_t* g_block_is_compressed = NULL;
 static char g_zeroblock_hash[DEDUP_MAC_SIZE_BYTES];
+static char *g_metadata = NULL;
 
 static unsigned int g_opt_dedup = 1;
 
@@ -831,6 +832,10 @@ write_compressed(void *arg)
         fprintf(fp, " \"crc32c\" : \"%08x\",\n", crc32c);
     }
 
+    if (g_metadata) {
+        fprintf(fp, " \"metadata\" : %s,\n", g_metadata);
+    }
+
     TAMP_LOG("size: %lu\n", g_opt_update ? g_filesize : g_in_bytes);
     fprintf(fp, " \"size\" : %lu\n", g_opt_update ? g_filesize : g_in_bytes);
     fprintf(fp, "}\n");
@@ -1424,6 +1429,17 @@ static void parse_json(int fd)
         } else if (jsoneq(buf, tok + i, "blocksize") == 0) {
             g_block_size = strtol(buf + (tok + i + 1)->start, NULL, 0);
             i++;
+        } else if (jsoneq(buf, tok + i, "metadata") == 0) {
+            i++;
+            int end = (tok + i)->end;
+            size_t len = (tok + i)->end - (tok + i)->start;
+            g_metadata = malloc(len + 1);
+            die_if(!g_metadata, ESTR_MALLOC);
+            g_metadata[len] = 0;
+            g_metadata = memcpy(g_metadata, buf + (tok + i)->start, len);
+            TAMP_LOG("metadata: %s\n", g_metadata);
+            while ((tok + i)->start < end) i++;
+            i--;
         } else if (jsoneq(buf, tok + i, "hash") == 0) {
             i++;
             vdie_if_n((tok + i)->end - (tok + i)->start != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, buf + (tok + i)->start, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
@@ -1817,6 +1833,7 @@ out:
     vol_buf_q_reinit(&comp_q_free, 0);
     free(g_zeroblock);
     free(g_chunk_dir);
+    free(g_metadata);
     free(g_block_mapping);
     free(g_block_is_compressed);
     TAMP_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
