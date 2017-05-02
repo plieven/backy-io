@@ -44,6 +44,8 @@
 #include "smhasher/src/MurmurHash3.h"
 #define DEDUP_MAC_NAME "mmh3-x64-128"
 #define DEDUP_MAC_SIZE 128
+#define DEDUP_MAC_SIZE_BYTES DEDUP_MAC_SIZE / 8
+#define DEDUP_MAC_SIZE_STR DEDUP_MAC_SIZE / 4 + 1
 #define DEDUP_HASH_FILENAME_MAX 512
 #define mmh3 _Z19MurmurHash3_x64_128PKvijPv
 
@@ -144,7 +146,7 @@ typedef struct vol_buf {
     u_int64_t seq;      /* Sequence number */
     uint8_t dedup_exists;
     uint8_t is_compressed;
-    char hash[DEDUP_MAC_SIZE/8];
+    char hash[DEDUP_MAC_SIZE_BYTES];
     u_int8_t _align[7];
     ulong_4char length;     /* How much is used */
     unsigned char buf[MIN_CBLK_SIZE];   /* the storage - may be more */
@@ -215,7 +217,7 @@ static uint64_t g_filesize = 0;     /* size of the uncompressed data */
 static uint64_t g_block_count = 0;
 static char* g_block_mapping = NULL;
 static uint8_t* g_block_is_compressed = NULL;
-static char g_zeroblock_hash[DEDUP_MAC_SIZE/8];
+static char g_zeroblock_hash[DEDUP_MAC_SIZE_BYTES];
 
 static unsigned int g_opt_dedup = 1;
 
@@ -415,7 +417,7 @@ void dedup_hash_mkdir(u_int8_t * hash)
 
 static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     int i;
-    for (i=0; i < DEDUP_MAC_SIZE / 8; i++) {
+    for (i=0; i < DEDUP_MAC_SIZE_BYTES; i++) {
         sprintf(s + i * 2, "%02x", hash[i]);
     }
 }
@@ -424,7 +426,7 @@ void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash, int compressed)
 {
     int i;
     snprintf(filename,DEDUP_HASH_FILENAME_MAX, "%s/%02x/%02x/", g_chunk_dir, hash[0], hash[1]);
-    for (i=0; i < DEDUP_MAC_SIZE / 8;i++) {
+    for (i=0; i < DEDUP_MAC_SIZE_BYTES;i++) {
         sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, "%02x", hash[i]);
     }
     sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, compressed ? ".chunk.lzo" : ".chunk");
@@ -750,7 +752,7 @@ wakeup(vol_buf_q *bufq)
 }
 
 void init_zero_block() {
-    uint8_t h[DEDUP_MAC_SIZE / 4 + 1];
+    uint8_t h[DEDUP_MAC_SIZE_STR];
     if (g_zeroblock) return;
     g_zeroblock = valloc(g_block_size);
     die_if(!g_zeroblock, ESTR_MALLOC);
@@ -762,7 +764,7 @@ void init_zero_block() {
 
 static int dedup_is_zero_chunk(u_int8_t *hash) {
     if (!g_zeroblock) init_zero_block();
-    return !memcmp(hash, g_zeroblock_hash, DEDUP_MAC_SIZE / 8);
+    return !memcmp(hash, g_zeroblock_hash, DEDUP_MAC_SIZE_BYTES);
 }
 
 /* ======================================================================== */
@@ -778,7 +780,7 @@ write_compressed(void *arg)
     int dedup_existing=0;
     int zeroblocks=0;
     FILE *fp = stdout;
-    uint8_t dedup_hash[DEDUP_MAC_SIZE / 4 + 1];
+    uint8_t dedup_hash[DEDUP_MAC_SIZE_STR];
 
     g_out_bytes = 0;
 
@@ -797,8 +799,8 @@ write_compressed(void *arg)
     while (1) {
         if (g_opt_update) {
             if (seq == g_block_count) break;
-            if (memcmp(g_zeroblock, g_block_mapping + seq * DEDUP_MAC_SIZE / 8, DEDUP_MAC_SIZE / 8)) {
-                dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE / 8, &dedup_hash[0]);
+            if (memcmp(g_zeroblock, g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+                dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
                 fprintf(fp, "%s\n  \"%lu\" : \"%s\"", seq ? "," : "", seq, dedup_hash);
                 seq++;
                 dedup_existing++;
@@ -965,7 +967,7 @@ compress(void *arg)
              * thread's free list, and the decompressed buffer
              * on to the queue for the write thread.
              */
-            memcpy(&comp_bufp->hash, &bufp->hash, DEDUP_MAC_SIZE / 8);
+            memcpy(&comp_bufp->hash, &bufp->hash, DEDUP_MAC_SIZE_BYTES);
             put_last(&in_q_free, bufp);
             write_buf = comp_bufp;
         }
@@ -1066,7 +1068,7 @@ compress_fd(int fd)
     while (1) {
         if (g_opt_update) {
             if (sequence == g_block_count) break;
-            if (memcmp(g_zeroblock, g_block_mapping + sequence * DEDUP_MAC_SIZE / 8, DEDUP_MAC_SIZE / 8)) {
+            if (memcmp(g_zeroblock, g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
                 sequence++;
                 g_in_bytes += g_block_size;
                 g_in_bytes = MIN(g_in_bytes, g_filesize);
@@ -1201,7 +1203,7 @@ write_decompressed(void *arg)
     while (1) {
         void *buf = g_zeroblock;
         size_t length = g_block_size;
-        void *buf_hash = g_block_mapping + sequence * DEDUP_MAC_SIZE / 8;
+        void *buf_hash = g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES;
         uint8_t is_zero_chunk = dedup_is_zero_chunk(buf_hash);
         if (!is_zero_chunk) {
             bufp = get_seq(&comp_q_dirty, sequence);
@@ -1216,13 +1218,13 @@ write_decompressed(void *arg)
             buf = bufp->buf;
 
             if (g_opt_verify_decompressed) {
-                char hash[DEDUP_MAC_SIZE/8];
+                char hash[DEDUP_MAC_SIZE_BYTES];
                 char hash_c[DEDUP_MAC_SIZE/4+1];
                 char hash_e[DEDUP_MAC_SIZE/4+1];
                 mmh3(bufp->buf, length, 0, &hash[0]);
                 dedup_hash_sprint(&hash[0], hash_c);
                 dedup_hash_sprint(buf_hash, hash_e);
-                vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE / 8), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
+                vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
                 if (g_opt_verbose > 1) {
                     TAMP_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
                 }
@@ -1312,7 +1314,7 @@ decompress(void *arg)
         
         int read_fd_dedup;
         u_int8_t dedup_file[DEDUP_HASH_FILENAME_MAX];
-        dedup_hash_filename(dedup_file, g_block_mapping + bufp->seq * DEDUP_MAC_SIZE / 8,
+        dedup_hash_filename(dedup_file, g_block_mapping + bufp->seq * DEDUP_MAC_SIZE_BYTES,
                             g_block_is_compressed[bufp->seq]);
         vdie_if((read_fd_dedup = open(dedup_file,
                 O_RDONLY)) < 0,
@@ -1461,7 +1463,7 @@ static void parse_json(int fd)
             g_block_count = (tok + i + 1)->size;
             i+=2;
             die_if(g_block_mapping, ESTR_MALLOC);
-            g_block_mapping = malloc((DEDUP_MAC_SIZE / 8) * g_block_count);
+            g_block_mapping = malloc((DEDUP_MAC_SIZE_BYTES) * g_block_count);
             die_if(!g_block_mapping, ESTR_MALLOC);
             g_block_is_compressed = malloc(g_block_count);
             die_if(!g_block_is_compressed, ESTR_MALLOC);
@@ -1469,8 +1471,8 @@ static void parse_json(int fd)
                 unsigned long seq = strtol(buf + (tok + j)->start, NULL, 0);
                 vdie_if_n(seq != (j - i) / 2, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", (j - i) / 2, seq);
                 vdie_if_n((tok + j +1)->end - (tok + j +1)->start != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d\n", DEDUP_MAC_SIZE / 4, (tok + j +1)->end - (tok + j +1)->start);
-                for (k = 0; k < DEDUP_MAC_SIZE / 8; k++) {
-                    g_block_mapping[seq * DEDUP_MAC_SIZE / 8 + k] = (hex2dec(buf[(tok + j + 1)->start + k * 2]) << 4) +
+                for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
+                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (hex2dec(buf[(tok + j + 1)->start + k * 2]) << 4) +
                                                                     hex2dec(buf[(tok + j + 1)->start + k * 2 + 1]);
                 }
             }
@@ -1506,13 +1508,13 @@ void verify_chunks() {
     int i;
     for (i = 0; i < g_block_count; i++) {
         uint8_t dedup_exists;
-        if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE / 8)) continue;
-        if (g_opt_update && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE / 8, DEDUP_MAC_SIZE / 8)) continue;
-        dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8, 1);
+        if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
+        if (g_opt_update && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
+        dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1);
         dedup_exists = file_exists(chunk_file);
         g_block_is_compressed[i] = 1;
         if (!dedup_exists && g_version > 1) {
-            dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE / 8, 0);
+            dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
             dedup_exists = file_exists(chunk_file);
             g_block_is_compressed[i] = 0;
         }
@@ -1577,7 +1579,7 @@ decompress_fd(int fd)
         write_decompressed, NULL), ESTR_THREAD_CREATE);
 
     for (i = 0; i < g_block_count; i++) {
-        if (dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE / 8)) {
+        if (dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) {
             continue;
         }
         /* Get a read buffer */
