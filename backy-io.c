@@ -1438,8 +1438,7 @@ static void parse_json(int fd)
             g_metadata[len] = 0;
             g_metadata = memcpy(g_metadata, buf + (tok + i)->start, len);
             TAMP_LOG("metadata: %s\n", g_metadata);
-            while ((tok + i)->start < end) i++;
-            i--;
+            while ((tok + i + 1)->start < end) i++;
         } else if (jsoneq(buf, tok + i, "hash") == 0) {
             i++;
             vdie_if_n((tok + i)->end - (tok + i)->start != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, buf + (tok + i)->start, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
