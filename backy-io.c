@@ -207,8 +207,6 @@ static uint8_t* g_block_is_compressed = NULL;
 static char g_zeroblock_hash[DEDUP_MAC_SIZE_BYTES];
 static char *g_metadata = NULL;
 
-static unsigned int g_opt_dedup = 1;
-
 /* ======================================================================== */
 
 #include <smmintrin.h>
@@ -1729,7 +1727,6 @@ main(int argc, char **argv)
             g_min_threads = atol(optarg);
             break;
         case 'X':
-            g_opt_dedup=1;
             g_chunk_dir = strdup(optarg);
             break;
         default:
