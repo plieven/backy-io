@@ -402,13 +402,6 @@ void dedup_hash_mkdir(u_int8_t * hash)
       dedup_mkdir(dir);
 }
 
-static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
-    int i;
-    for (i=0; i < DEDUP_MAC_SIZE_BYTES; i++) {
-        sprintf(s + i * 2, "%02x", hash[i]);
-    }
-}
-
 void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash, int compressed)
 {
     int i;

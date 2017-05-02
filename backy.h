@@ -11,3 +11,10 @@
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
+
+static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
+    int i;
+    for (i=0; i < DEDUP_MAC_SIZE_BYTES; i++) {
+        sprintf(s + i * 2, "%02x", hash[i]);
+    }
+}
