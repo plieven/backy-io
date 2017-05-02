@@ -973,7 +973,7 @@ compress(void *arg)
 #ifndef NDEBUG
         blocks_compressed++;
 #endif
-        if (!write_buf->dedup_exists) {
+        if (!write_buf->dedup_exists && write_buf->length.val > 0) {
             int g_write_fd_dedup;
             ssize_t bytes;
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
