@@ -34,26 +34,10 @@
 #include <stdint.h>
 #include <malloc.h>     /* valloc() */
 
-#define CBLK_SIZE           (4*1024*1024)  /* Default block size - 4096KB */
-#define MIN_CBLK_SIZE       (64*1024)     /* 256KByte */
-#define MAX_CBLK_SIZE       (16*1024*1024) /* 16MiB */
 #define MAX_OUTPUT_BUFFERS  64
-
-pthread_mutex_t log_mutex;
-
-#define TAMP_LOG(format, args...) \
-    do { \
-        pthread_mutex_lock(&log_mutex); \
-        fprintf(stderr, format, ## args); \
-        fflush(stderr); \
-        pthread_mutex_unlock(&log_mutex); \
-    } while (0)
 
 #include "minilzo/minilzo.h"
 #define COMPRESS_OVERHEAD   g_block_size / 64 + 16 + 3
-
-static uint32_t crc32c = 0xffffffff;
-static uint32_t crc32c_expected = 0xffffffff;
 
 #define plural(n)   ((n) == 1 ? "" : "s")
 
@@ -94,19 +78,12 @@ static char g_estr_thread_detached[] =  "thread_detached";
 #define ESTR_THREAD_DETACHED        g_estr_thread_detached
 static char g_estr_thread_join[] =  "thread_join";
 #define ESTR_THREAD_JOIN        g_estr_thread_join
-static char g_estr_malloc[] =       "malloc";
-#define ESTR_MALLOC         g_estr_malloc
 static char g_estr_memalign[] =     "memalign";
 #define ESTR_MEMALIGN           g_estr_memalign
 static char g_estr_write[] =        "write";
 #define ESTR_WRITE          g_estr_write
 static char g_estr_read[] =     "read";
 #define ESTR_READ           g_estr_read
-static char g_estr_fdopen[] =       "fdopen";
-#define ESTR_FDOPEN         g_estr_fdopen
-static char g_estr_fread[] =        "fread";
-#define ESTR_FREAD          g_estr_fread
-
 
 /* ======================================================================== */
 
@@ -167,7 +144,6 @@ static vol_int in_q_alloc;  /* Buffers allocated for input */
 static vol_int comp_q_alloc;    /* Buffers allocated for (de)compression */
 #endif
 
-static char *g_arg0;        /* Program name */
 static char *g_in_path = NULL;      /* Input file */
 static char *g_out_path = NULL; /* Output file */
 static char *g_chunk_dir = NULL;   /* directory with dedup tables */
@@ -195,17 +171,9 @@ static unsigned long g_max_threads; /* Maximum (de)compress threads */
 static unsigned long g_min_threads = 1; /* Minimum (de)compress threads */
 
 static char *g_stats_path = "(stdin)";
-static void *g_zeroblock = NULL;
+static uint32_t crc32c = 0xffffffff;
 
-/* defaults */
-static unsigned int g_block_size = CBLK_SIZE;
-static unsigned int g_version = 1;
-static uint64_t g_filesize = 0;     /* size of the uncompressed data */
-static uint64_t g_block_count = 0;
-static char* g_block_mapping = NULL;
-static uint8_t* g_block_is_compressed = NULL;
-static char g_zeroblock_hash[DEDUP_MAC_SIZE_BYTES];
-static char *g_metadata = NULL;
+/* global variables */
 
 /* ======================================================================== */
 
@@ -258,43 +226,6 @@ uint32_t crc32c_hardware(uint32_t crc, const uint8_t* p_buf, size_t length) {
 
   return crc32bit;
 }
-
-#define DIAG_NOT_ERRNO      (-1)
-
-/*
- * diag -   Print a diagnostic; preceded by g_arg0.
- *
- *  error   errno value (not used if < 0)
- *  format  printf-style format string
- *  ... arguments to be inserted into diagnostic
- */
-static void
-diag(int error, char *format, ...)
-{
-    va_list ap;
-    char *error_str;
-
-    (void) fprintf(stderr, "\nFATAL ERROR!\n%s: ", g_arg0);
-    va_start(ap, format);
-    (void) vfprintf(stderr, format, ap);
-    va_end(ap);
-    if (error != DIAG_NOT_ERRNO) {
-        error_str = strerror(error);
-        if (! error_str)
-            error_str = strerror(0);
-        (void) fprintf(stderr, ": %s (%d)\n", error_str,error);
-    }
-}
-
-#define die_if(cond, str)   { \
-    if (cond) { \
-        diag(errno, str); exit(1); } }
-#define vdie_if(cond, str, ...) { \
-    if (cond) { \
-        diag(errno, str, __VA_ARGS__); exit(1); } }
-#define vdie_if_n(cond, str, ...) { \
-    if (cond) { \
-        diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); exit(1); } }
 
 /* Thread calls return 0 if OK, or an error */
 #define thr_die_iferr(stat, str) { \
@@ -371,14 +302,14 @@ vol_int_set(vol_int *vi, int newval)
 int file_exists(u_int8_t * filename)
 {
     int fd;
-    if (g_opt_verbose >2) TAMP_LOG("checking for '%s'... ",filename);
+    if (g_opt_verbose >2) BACKY_LOG("checking for '%s'... ",filename);
     if ((fd = open(filename, O_RDONLY))>0)
     {
         close(fd);
-        if (g_opt_verbose >2) TAMP_LOG(" FOUND!\n");
+        if (g_opt_verbose >2) BACKY_LOG(" FOUND!\n");
         return 1;
     }
-    if (g_opt_verbose >2) TAMP_LOG(" NOT FOUND!\n");
+    if (g_opt_verbose >2) BACKY_LOG(" NOT FOUND!\n");
     return 0;
 }
 
@@ -387,7 +318,7 @@ int dedup_mkdir(u_int8_t * dir) {
       ret = mkdir(dir, 0755) ? errno : 0;
       vdie_if((ret && (ret != EEXIST)), "mkdir: %s", dir);
       if (g_opt_verbose && !ret) {
-          TAMP_LOG("mkdir: %s\n", dir);
+          BACKY_LOG("mkdir: %s\n", dir);
       }
       return ret;
 }
@@ -738,7 +669,7 @@ void init_zero_block() {
     memset(g_zeroblock, 0x00, g_block_size);
     mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
     dedup_hash_sprint(g_zeroblock_hash, h);
-    TAMP_LOG("init_zero_block: zeroblock hash is %s\n", h);
+    BACKY_LOG("init_zero_block: zeroblock hash is %s\n", h);
 }
 
 static int dedup_is_zero_chunk(u_int8_t *hash) {
@@ -799,7 +730,7 @@ write_compressed(void *arg)
             assert(g_version == 1 || length <= g_block_size);
 
             if (g_opt_verbose > 1) {
-                TAMP_LOG("write: seq %lu dedup_exists %d is_compressed %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, bufp->length.val);
+                BACKY_LOG("write: seq %lu dedup_exists %d is_compressed %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, bufp->length.val);
             }
             if (!bufp->dedup_exists) {
                 dedup_new++;
@@ -826,7 +757,7 @@ write_compressed(void *arg)
     fprintf(fp, "\n },\n");
 
     if (crc32c != 0xffffffff) {
-        TAMP_LOG("crc32c: %08x\n", crc32c);
+        BACKY_LOG("crc32c: %08x\n", crc32c);
         fprintf(fp, " \"crc32c\" : \"%08x\",\n", crc32c);
     }
 
@@ -834,12 +765,12 @@ write_compressed(void *arg)
         fprintf(fp, " \"metadata\" : %s,\n", g_metadata);
     }
 
-    TAMP_LOG("size: %lu\n", g_opt_update ? g_filesize : g_in_bytes);
+    BACKY_LOG("size: %lu\n", g_opt_update ? g_filesize : g_in_bytes);
     fprintf(fp, " \"size\" : %lu\n", g_opt_update ? g_filesize : g_in_bytes);
     fprintf(fp, "}\n");
     fclose(fp);
 
-    TAMP_LOG("dedup: new %d new_compressed %d existing %d zeroblocks %d\n", dedup_new, dedup_new_comp, dedup_existing, zeroblocks);
+    BACKY_LOG("dedup: new %d new_compressed %d existing %d zeroblocks %d\n", dedup_new, dedup_new_comp, dedup_existing, zeroblocks);
 
     return (NULL);
 }
@@ -970,7 +901,7 @@ compress(void *arg)
                 if (errno != EEXIST) {
                     vdie_if(1,"dedup chunk write: %s", dedup_filename);
                 }
-                TAMP_LOG("dedup write collision: %s\n", dedup_filename);
+                BACKY_LOG("dedup write collision: %s\n", dedup_filename);
                 write_buf->dedup_exists = 1;
             } else {
                 bytes = write(g_write_fd_dedup, &(write_buf->buf), write_buf->length.val);
@@ -1058,7 +989,7 @@ compress_fd(int fd)
                 continue;
             }
             if (sequence * g_block_size != lseek(fd, sequence * g_block_size, SEEK_SET)) {
-                TAMP_LOG("seek error.\n");
+                BACKY_LOG("seek error.\n");
                 exit(1);
             }
         }
@@ -1104,7 +1035,7 @@ compress_fd(int fd)
         bufp->length.val = bytes;
         bufp->seq = sequence;
 
-        if (g_opt_verbose) TAMP_LOG("progress: %lu bytes processed.\n", g_in_bytes);
+        if (g_opt_verbose) BACKY_LOG("progress: %lu bytes processed.\n", g_in_bytes);
 
         /* Post the buffer to be compressed */
         put_last(&in_q_dirty, bufp);
@@ -1138,7 +1069,7 @@ compress_fd(int fd)
     if (g_opt_verbose) {
         /* Report statistics */
         if (g_out_bytes < g_in_bytes)
-            TAMP_LOG(
+            BACKY_LOG(
                 "%s: read %llu, wrote %llu (-%3.1f%%),"
                 " %d thread%s\n",
                 g_stats_path, (unsigned long long)g_in_bytes,
@@ -1148,7 +1079,7 @@ compress_fd(int fd)
                 g_compress_threads.value,
                 plural(g_compress_threads.value));
         else
-            TAMP_LOG(
+            BACKY_LOG(
                 "%s: read %llu, wrote %llu (+%.3f%%),"
                 " %d thread%s\n",
                 g_stats_path, (unsigned long long)g_in_bytes,
@@ -1176,7 +1107,7 @@ write_decompressed(void *arg)
         } else {
             //write to stdout
             if (fcntl(1, F_SETPIPE_SZ, g_block_size) < 0) {
-                TAMP_LOG("WARN: f_setpipe_sz to %d failed\n", g_block_size);
+                BACKY_LOG("WARN: f_setpipe_sz to %d failed\n", g_block_size);
             }
         }
     }
@@ -1209,7 +1140,7 @@ write_decompressed(void *arg)
                 dedup_hash_sprint(buf_hash, hash_e);
                 vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
                 if (g_opt_verbose > 1) {
-                    TAMP_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
+                    BACKY_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
                 }
             }
         }
@@ -1221,7 +1152,7 @@ write_decompressed(void *arg)
         crc32c = crc32c_hardware(crc32c,(const u_int8_t *) buf, length);
 
         if (g_opt_verbose) {
-            TAMP_LOG("progress: %lu bytes processed.\n", g_out_bytes);
+            BACKY_LOG("progress: %lu bytes processed.\n", g_out_bytes);
         }
 
         if (!is_zero_chunk) {
@@ -1236,13 +1167,13 @@ write_decompressed(void *arg)
     vdie_if_n(g_out_bytes != g_filesize, "out_bytes does not match size (%lu != %lu)\n", g_out_bytes, g_filesize);
 
     if (g_opt_verify_decompressed) {
-        TAMP_LOG("verify_deep: all chunks checksum passed\n");
+        BACKY_LOG("verify_deep: all chunks checksum passed\n");
     }
 
-    if (crc32c_expected != 0xffffffff) {
-        vdie_if_n(crc32c != crc32c_expected,"crc32c checksum failure: expected %08x computed %08x\n", crc32c_expected, crc32c);
-        TAMP_LOG("crc32c: %08x\n", crc32c);
-        TAMP_LOG("verify_crc32: checksum correct\n");
+    if (g_crc32c_expected != 0xffffffff) {
+        vdie_if_n(crc32c != g_crc32c_expected,"crc32c checksum failure: expected %08x computed %08x\n", g_crc32c_expected, crc32c);
+        BACKY_LOG("crc32c: %08x\n", crc32c);
+        BACKY_LOG("verify_crc32: checksum correct\n");
     }
 
     if (g_opt_decompress) {
@@ -1306,7 +1237,7 @@ decompress(void *arg)
         close(read_fd_dedup);
         g_in_bytes += bufp->length.val;
         if (g_opt_verbose > 1) {
-                  TAMP_LOG("dedup: successfully read %lu bytes from %s\n",bufp->length.val,dedup_file);
+                  BACKY_LOG("dedup: successfully read %lu bytes from %s\n",bufp->length.val,dedup_file);
         }
 
         /* Set the sequence number */
@@ -1330,7 +1261,7 @@ decompress(void *arg)
                 (unsigned long *) &(comp_bufp->length),
                 NULL);
             if (ret != LZO_E_OK) {
-                TAMP_LOG(
+                BACKY_LOG(
                     "%s: lzo1x_decompress failed, "
                 "return     = %d\n", g_arg0, ret);
                 exit(1);
@@ -1362,140 +1293,6 @@ decompress(void *arg)
 #define VBUF_SIZE   65536
 #define BUF_SIZE    65536
 
-static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
-    if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
-            strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
-        return 0;
-    }
-    return -1;
-}
-
-static int hex2dec(char c)
-{
-    if (c >= '0' && c <= '9')
-        return (int) c - '0';
-    else
-    {
-        if (c >= 'A' && c <= 'F')
-            return (int) (10 + c - 'A');
-        else if (c >= 'a' && c <= 'f')
-            return (int) (10 + c - 'a');
-        else
-            return 0;
-    }
-}
-
-static void parse_json(int fd)
-{
-    FILE *input;
-    char *buf;
-    int i,j,k;
-    size_t sz, count;
-    jsmn_parser parser;
-    jsmntok_t *tok;
-    int tokencnt;
-
-    input = fdopen(fd, "r");
-    die_if(! input, ESTR_FDOPEN);
-
-    fseek(input, 0L, SEEK_END);
-    sz = ftell(input);
-    buf = malloc(sz);
-    die_if(!buf, ESTR_MALLOC);
-
-    rewind(input);
-
-    count = fread(buf, 1, sz, input);
-    die_if(count != sz, ESTR_FREAD);
-
-    jsmn_init(&parser);
-    tokencnt = jsmn_parse(&parser, buf, sz, NULL, 0);
-
-    tok = malloc(sizeof(*tok) * tokencnt);
-    die_if(!tok, ESTR_MALLOC);
-    
-    jsmn_init(&parser);
-    vdie_if_n(tokencnt != jsmn_parse(&parser, buf, sz, tok, tokencnt), "json parse error", 0);
-
-    for (i = 1; i < tokencnt; i++) {
-        if (jsoneq(buf, tok + i, "size") == 0) {
-            g_filesize = strtol(buf + (tok + i + 1)->start, NULL, 0);
-            i++;
-        } else if (jsoneq(buf, tok + i, "version") == 0) {
-            g_version = strtol(buf + (tok + i + 1)->start, NULL, 0);
-            i++;
-        } else if (jsoneq(buf, tok + i, "blocksize") == 0) {
-            g_block_size = strtol(buf + (tok + i + 1)->start, NULL, 0);
-            i++;
-        } else if (jsoneq(buf, tok + i, "metadata") == 0) {
-            i++;
-            int end = (tok + i)->end;
-            size_t len = (tok + i)->end - (tok + i)->start;
-            g_metadata = malloc(len + 1);
-            die_if(!g_metadata, ESTR_MALLOC);
-            g_metadata[len] = 0;
-            g_metadata = memcpy(g_metadata, buf + (tok + i)->start, len);
-            TAMP_LOG("metadata: %s\n", g_metadata);
-            while ((tok + i + 1)->start < end) i++;
-        } else if (jsoneq(buf, tok + i, "hash") == 0) {
-            i++;
-            vdie_if_n((tok + i)->end - (tok + i)->start != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, buf + (tok + i)->start, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
-        } else if (jsoneq(buf, tok + i, "crc32c") == 0) {
-            crc32c_expected = (hex2dec(buf[(tok + i + 1)->start + 0]) << 28) +
-                              (hex2dec(buf[(tok + i + 1)->start + 1]) << 24) +
-                              (hex2dec(buf[(tok + i + 1)->start + 2]) << 20) +
-                              (hex2dec(buf[(tok + i + 1)->start + 3]) << 16) +
-                              (hex2dec(buf[(tok + i + 1)->start + 4]) << 12) +
-                              (hex2dec(buf[(tok + i + 1)->start + 5]) << 8) +
-                              (hex2dec(buf[(tok + i + 1)->start + 6]) << 4) +
-                              (hex2dec(buf[(tok + i + 1)->start + 7]) << 0);
-            TAMP_LOG("crc32c_expected: %08x\n", crc32c_expected);
-            i += 1;
-        } else if (jsoneq(buf, tok + i, "mapping") == 0) {
-            vdie_if_n((tok + i + 1)->type != JSMN_OBJECT, "json parser error: mapping has unexpected type (%d)\n", (tok + i + 1)->type);
-            g_block_count = (tok + i + 1)->size;
-            i+=2;
-            die_if(g_block_mapping, ESTR_MALLOC);
-            g_block_mapping = malloc((DEDUP_MAC_SIZE_BYTES) * g_block_count);
-            die_if(!g_block_mapping, ESTR_MALLOC);
-            g_block_is_compressed = malloc(g_block_count);
-            die_if(!g_block_is_compressed, ESTR_MALLOC);
-            for (j = i; j < i + g_block_count * 2; j += 2) {
-                unsigned long seq = strtol(buf + (tok + j)->start, NULL, 0);
-                vdie_if_n(seq != (j - i) / 2, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", (j - i) / 2, seq);
-                vdie_if_n((tok + j +1)->end - (tok + j +1)->start != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d\n", DEDUP_MAC_SIZE / 4, (tok + j +1)->end - (tok + j +1)->start);
-                for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
-                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (hex2dec(buf[(tok + j + 1)->start + k * 2]) << 4) +
-                                                                    hex2dec(buf[(tok + j + 1)->start + k * 2 + 1]);
-                }
-            }
-            i = j - 1;
-        } else {
-            if ((tok + i)->type == JSMN_STRING) { 
-                vdie_if_n(1, "json parser error: unexpected token '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
-            } else {
-                vdie_if_n(1, "json parser error: unexpected token (type %d)\n", (tok + i)->type);
-            }
-        }
-    }
-
-    vdie_if_n(g_version < 1 || g_version > 2, "unsupported version %d\n", g_version);
-    vdie_if_n(g_version == 1 && g_block_size != 4096*1024, "unsupported version 1 block size %lu\n", g_block_size);
-    vdie_if_n(g_block_size % MIN_CBLK_SIZE || g_block_size < MIN_CBLK_SIZE || g_block_size > MAX_CBLK_SIZE, "unsupported block size %lu\n", g_block_size);
-
-    TAMP_LOG("version: %d\n", g_version);
-    TAMP_LOG("blocksize: %u\n", g_block_size);
-    TAMP_LOG("size: %lu\n", g_filesize);
-
-    vdie_if_n(g_block_count != (g_filesize + g_block_size - 1) / (g_block_size), "invalid number of chunks: expected %lu found %lu\n", (g_filesize + g_block_size - 1) / (g_block_size), g_block_count);
-
-    TAMP_LOG("blockcount: %lu\n", g_block_count);
-
-    free(tok);
-    free(buf);
-    fclose(input);
-}
-
 void verify_chunks() {
     u_int8_t chunk_file[DEDUP_HASH_FILENAME_MAX];
     int i;
@@ -1513,7 +1310,7 @@ void verify_chunks() {
         }
         vdie_if_n(!dedup_exists, "verify: chunk %s does not exist\n", chunk_file);
     }
-    TAMP_LOG("verify_simple: all chunks available\n");
+    BACKY_LOG("verify_simple: all chunks available\n");
 }
 
 static void
@@ -1621,14 +1418,14 @@ decompress_fd(int fd)
 
     if (g_opt_verbose == 1)
         /* Report statistics */
-        TAMP_LOG(
+        BACKY_LOG(
             "%s: read %llu, wrote %llu, %d thread%s\n",
             g_stats_path, (unsigned long long)g_in_bytes,
             (unsigned long long)g_out_bytes,
             g_compress_threads.value,
             plural(g_compress_threads.value));
     else if (g_opt_verbose > 1)
-        TAMP_LOG(
+        BACKY_LOG(
             "%s: read %llu, wrote %llu, %uKB blocks, "
             "%d thread%s\n",
             g_stats_path, (unsigned long long)g_in_bytes,
@@ -1657,6 +1454,7 @@ main(int argc, char **argv)
     else
         g_arg0 = argv[0];
     /* Compress or decompress? */
+
     if (strncmp(g_arg0, "un", 2) == 0)
         g_opt_decompress = 1;
 
@@ -1700,7 +1498,7 @@ main(int argc, char **argv)
             g_in_path = optarg;
             vdie_if((read_fd = open(optarg, O_RDONLY | O_LARGEFILE,
                 0)) < 0, "open: %s", optarg);
-            TAMP_LOG("input: %s\n", optarg);
+            BACKY_LOG("input: %s\n", optarg);
             break;
         case 'o':
             /* Output file specified */
@@ -1749,7 +1547,7 @@ main(int argc, char **argv)
     }
 
     if (opt_error) {
-        TAMP_LOG("operations:\n"
+        BACKY_LOG("operations:\n"
             " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
@@ -1769,7 +1567,7 @@ main(int argc, char **argv)
         exit(2);
     }
 
-    TAMP_LOG("pid: %d\n",getpid());
+    BACKY_LOG("pid: %d\n",getpid());
 
     /*
      * Initialise buffer queues
@@ -1788,10 +1586,10 @@ main(int argc, char **argv)
     vol_int_init(&g_output_buffers);
     vol_int_init(&g_comp_buffers);
 
-    if (!read_fd) TAMP_LOG("input: (stdin)\n");
-    if (g_opt_decompress || g_opt_compress) TAMP_LOG("output: %s\n", g_write_fd != 1 ? g_out_path : "(stdout)");
+    if (!read_fd) BACKY_LOG("input: (stdin)\n");
+    if (g_opt_decompress || g_opt_compress) BACKY_LOG("output: %s\n", g_write_fd != 1 ? g_out_path : "(stdout)");
 
-    TAMP_LOG("max_threads: %lu\n", g_max_threads);
+    BACKY_LOG("max_threads: %lu\n", g_max_threads);
 
     if (!g_chunk_dir) {
         g_chunk_dir = strdup((g_opt_compress || g_opt_update) ? g_out_path : g_in_path);
@@ -1800,7 +1598,7 @@ main(int argc, char **argv)
         sprintf(g_chunk_dir, "%s/chunks", g_chunk_dir);
     }
 
-    TAMP_LOG("chunkdir: %s\n", g_chunk_dir);
+    BACKY_LOG("chunkdir: %s\n", g_chunk_dir);
 
     if (g_opt_update) {
         int write_fd;
@@ -1827,11 +1625,8 @@ main(int argc, char **argv)
 out:
     vol_buf_q_reinit(&in_q_free, 0);
     vol_buf_q_reinit(&comp_q_free, 0);
-    free(g_zeroblock);
     free(g_chunk_dir);
-    free(g_metadata);
-    free(g_block_mapping);
-    free(g_block_is_compressed);
-    TAMP_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
+    g_free();
+    BACKY_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
     return (errors);
 }
