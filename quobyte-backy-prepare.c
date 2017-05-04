@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
         }
         parse_json(fd);
         close(fd);
-        assert(g_block_size = OBJ_SIZE);
+        assert(g_block_size == OBJ_SIZE);
         assert(g_filesize <= filesize);
         assert(g_block_count <= obj_count);
         assert(g_version == 2);
