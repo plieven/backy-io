@@ -161,6 +161,7 @@ static int g_opt_verify     = 0;        /* Verify is set */
 static int g_opt_verify_simple = 0;     /* Verify simple is set */
 static int g_opt_verify_decompressed = 0;       /* Verify of decompressed chunks is set */
 static int g_opt_skip_zeroes = 0;       /* Skip zeroes on decompress */
+static int g_opt_no_create   = 0;       /* Do not create output file on decompress, skip 0x00 chunks */
 
 static vol_int g_compress_threads;
 static vol_int g_comp_idle;         /* Zero IFF all (de)compress threads */
@@ -1102,10 +1103,19 @@ write_decompressed(void *arg)
 
     if (g_opt_decompress) {
         if (g_write_fd < 0) {
+            int flags = O_WRONLY | O_LARGEFILE;
+            if (!g_opt_no_create) flags |= O_CREAT;
             vdie_if((g_write_fd = open(g_out_path,
                 O_WRONLY | O_CREAT | O_LARGEFILE, 0666)) < 0,
                 "open: %s", g_out_path);
+            if (g_opt_no_create) {
+                assert(!g_opt_skip_zeroes);
+                struct stat st;
+                vdie_if(fstat(g_write_fd, &st) < 0, "fstat failed", 0);
+                vdie_if(st.st_size != g_filesize, "output filesize does not match backup filesize (%lu != %lu)", st.st_size, g_filesize);
+            }
         } else {
+            assert(!g_opt_no_create && !g_opt_skip_zeroes);
             //write to stdout
             if (fcntl(1, F_SETPIPE_SZ, g_block_size) < 0) {
                 BACKY_LOG("WARN: f_setpipe_sz to %d failed\n", g_block_size);
@@ -1118,9 +1128,19 @@ write_decompressed(void *arg)
     while (1) {
         void *buf = g_zeroblock;
         size_t length = g_block_size;
+        /* XXX: we might access out of bounds here */
         void *buf_hash = g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES;
         uint8_t is_zero_chunk = dedup_is_zero_chunk(buf_hash);
-        if (g_opt_decompress && g_opt_skip_zeroes && !is_zero_chunk) {
+        if (g_opt_no_create) {
+            if (sequence == g_block_count) break;
+            if (!memcmp(g_zeroblock, g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+                sequence++;
+                g_out_bytes += g_block_size;
+                g_out_bytes = MIN(g_out_bytes, g_filesize);
+                continue;
+            }
+        }
+        if (g_opt_no_create || (g_opt_decompress && g_opt_skip_zeroes && !is_zero_chunk)) {
             if (sequence * g_block_size != lseek(g_write_fd, sequence * g_block_size, SEEK_SET)) {
                 BACKY_LOG("seek error.\n");
                 exit(1);
@@ -1177,7 +1197,7 @@ write_decompressed(void *arg)
         BACKY_LOG("verify_deep: all chunks checksum passed\n");
     }
 
-    if (g_crc32c_expected != 0xffffffff) {
+    if (g_crc32c_expected != 0xffffffff && !g_opt_no_create) {
         vdie_if_n(crc32c != g_crc32c_expected,"crc32c checksum failure: expected %08x computed %08x\n", g_crc32c_expected, crc32c);
         BACKY_LOG("crc32c: %08x\n", crc32c);
         BACKY_LOG("verify_crc32: checksum correct\n");
@@ -1306,7 +1326,7 @@ void verify_chunks() {
     for (i = 0; i < g_block_count; i++) {
         uint8_t dedup_exists;
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
-        if (g_opt_update && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
+        if ((g_opt_update || g_opt_no_create) && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
         dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1);
         dedup_exists = file_exists(chunk_file);
         g_block_is_compressed[i] = 1;
@@ -1379,6 +1399,13 @@ decompress_fd(int fd)
         if (dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) {
             continue;
         }
+
+        if (g_opt_no_create) {
+            if (!memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+                continue;
+            }
+        }
+
         /* Get a read buffer */
         if (g_comp_buffers.value >= MAX_OUTPUT_BUFFERS) {
             /* Allow buffers to drain */
@@ -1412,7 +1439,6 @@ decompress_fd(int fd)
         }
         put_last(&in_q_dirty, bufp);
     }
-
     set_last_block(&in_q_dirty, i - 1);
 
     /* Wake up any remaining compress threads */
@@ -1471,7 +1497,7 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTZdvcui:o:b:p:m:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTZdvcuni:o:b:p:m:X:")) != -1) {
         switch (c) {
         case '1':
             g_version = 1;
@@ -1487,6 +1513,9 @@ main(int argc, char **argv)
             break;
         case 'Z':
             g_opt_skip_zeroes = 1;
+            break;
+        case 'n':
+            g_opt_no_create = 1;
             break;
         case 'd':
             g_opt_decompress = 1;
@@ -1559,7 +1588,7 @@ main(int argc, char **argv)
     if (opt_error) {
         BACKY_LOG("operations:\n"
             " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-Z] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-Z|-n] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
@@ -1569,6 +1598,7 @@ main(int argc, char **argv)
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
             " -Z do not write zero chunks on decompress\n"
+            " -n do not overwrite output file and skip 0x00 chunks\n"
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
             " -m <num> minimum number of threads\n"
             " -p <num> maximum number of threads\n"
