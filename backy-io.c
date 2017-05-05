@@ -158,8 +158,9 @@ static int g_opt_decompress = 0;    /* Decompress is set */
 static int g_opt_compress   = 0;        /* Compress is set */
 static int g_opt_update     = 0;        /* Update is set */
 static int g_opt_verify     = 0;        /* Verify is set */
-static int g_opt_verify_simple     = 0;     /* Verify simple is set */
-static int g_opt_verify_decompressed     = 0;       /* Verify of decompressed chunks is set */
+static int g_opt_verify_simple = 0;     /* Verify simple is set */
+static int g_opt_verify_decompressed = 0;       /* Verify of decompressed chunks is set */
+static int g_opt_skip_zeroes = 0;       /* Skip zeroes on decompress */
 
 static vol_int g_compress_threads;
 static vol_int g_comp_idle;         /* Zero IFF all (de)compress threads */
@@ -1119,6 +1120,12 @@ write_decompressed(void *arg)
         size_t length = g_block_size;
         void *buf_hash = g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES;
         uint8_t is_zero_chunk = dedup_is_zero_chunk(buf_hash);
+        if (g_opt_decompress && g_opt_skip_zeroes && !is_zero_chunk) {
+            if (sequence * g_block_size != lseek(g_write_fd, sequence * g_block_size, SEEK_SET)) {
+                BACKY_LOG("seek error.\n");
+                exit(1);
+            }
+        }
         if (!is_zero_chunk) {
             bufp = get_seq(&comp_q_dirty, sequence);
             if (! bufp) {
@@ -1145,7 +1152,7 @@ write_decompressed(void *arg)
             }
         }
 
-        if (g_opt_decompress) {
+        if (g_opt_decompress && (!is_zero_chunk || !g_opt_skip_zeroes)) {
             die_if(write(g_write_fd, buf, length) < 0, ESTR_WRITE);
         }
         g_out_bytes += length;
@@ -1464,7 +1471,7 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTdvcui:o:b:p:m:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTZdvcui:o:b:p:m:X:")) != -1) {
         switch (c) {
         case '1':
             g_version = 1;
@@ -1477,6 +1484,9 @@ main(int argc, char **argv)
             break;
         case 'T':
             g_opt_verify_simple = 1;
+            break;
+        case 'Z':
+            g_opt_skip_zeroes = 1;
             break;
         case 'd':
             g_opt_decompress = 1;
@@ -1549,7 +1559,7 @@ main(int argc, char **argv)
     if (opt_error) {
         BACKY_LOG("operations:\n"
             " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-Z] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
@@ -1558,6 +1568,7 @@ main(int argc, char **argv)
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
+            " -Z do not write zero chunks on decompress\n"
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
             " -m <num> minimum number of threads\n"
             " -p <num> maximum number of threads\n"
