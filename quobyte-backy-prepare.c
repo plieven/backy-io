@@ -22,8 +22,9 @@ int main(int argc, char** argv) {
     size_t bitmap_sz;
     struct stat st;
     FILE *fp = stdout;
+    int recovery_mode = 0;
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src>]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|<n>]]\n", argv[0]);
         exit(1);
     }
     pthread_mutex_init(&log_mutex, NULL);
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
     obj_count = (filesize + OBJ_SIZE - 1) / OBJ_SIZE;
     fprintf(stderr, "number of objects = %lu\n", obj_count);
 
-    if (argv[4]) {
+    if (argc > 4) {
         jsmn_parser parser;
         jsmntok_t *tok;
         int tokencnt;
@@ -116,13 +117,23 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "number of objects (ret) = %d\n", ret);
     fprintf(stderr, "current version = %lu\n", cur_version);
+
+    if (argc > 5) {
+        const char *recovery_sw = "-r";
+        if (!strncmp(argv[5], recovery_sw, strlen(recovery_sw))) {
+            recovery_mode = 1;
+            fprintf(stderr, "RECOVERY MODE selected\n");
+        }
+    }
+
     for (i = 0; i < obj_count; i++) {
          if (!(i % 64)) fprintf(stderr, "\n");
          if (OBJ_IS_ALLOCATED(i)) {
-             memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
+             if (!recovery_mode) memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
              num_changed++;
              fprintf(stderr, "X");
          } else {
+             if (recovery_mode) memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
              fprintf(stderr, ".");
          }
     }
@@ -145,11 +156,13 @@ int main(int argc, char** argv) {
          fprintf(fp, "%s\n  \"%lu\" : \"%s\"", i ? "," : "", i, dedup_hash);
     }
     fprintf(fp, "\n },\n");
-    fprintf(fp, " \"metadata\" : {\n");
-    fprintf(fp, "  \"quobyte_registry\": \"%s\",\n", argv[1]);
-    fprintf(fp, "  \"quobyte_file\": \"%s\",\n", argv[2]);
-    fprintf(fp, "  \"quobyte_file_version\": %lu", cur_version);
-    fprintf(fp, "\n },\n");
+    if (!recovery_mode) {
+        fprintf(fp, " \"metadata\" : {\n");
+        fprintf(fp, "  \"quobyte_registry\": \"%s\",\n", argv[1]);
+        fprintf(fp, "  \"quobyte_file\": \"%s\",\n", argv[2]);
+        fprintf(fp, "  \"quobyte_file_version\": %lu", cur_version);
+        fprintf(fp, "\n },\n");
+    }
     fprintf(fp, " \"size\" : %lu\n", filesize);
     fprintf(fp, "}\n");
 
