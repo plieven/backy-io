@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     size_t bitmap_sz;
     struct stat st;
     FILE *fp = stdout;
-    int recovery_mode = 0;
+    int recovery_mode = 0, verify_mode = 0;
     if (argc < 4) {
         fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|<n>]]\n", argv[0]);
         exit(1);
@@ -122,9 +122,13 @@ int main(int argc, char** argv) {
 
     if (argc > 5) {
         const char *recovery_sw = "-r";
+        const char *verify_sw = "-v";
         if (!strncmp(argv[5], recovery_sw, strlen(recovery_sw))) {
             recovery_mode = 1;
             fprintf(stderr, "RECOVERY MODE selected\n");
+        } else if (!strncmp(argv[5], verify_sw, strlen(verify_sw))) {
+            verify_mode = 1;
+            fprintf(stderr, "VERIFY ALL selected\n");
         }
     }
 
@@ -141,6 +145,24 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "\n\n");
     fprintf(stderr, "number of changed objects = %d\n", num_changed);
+
+    if (verify_mode) {
+        char *buf = malloc(OBJ_SIZE);
+        char h[DEDUP_MAC_SIZE_BYTES];
+        assert(buf);
+        for (i = 0; i < obj_count; i++) {
+            if (!OBJ_IS_ALLOCATED(i)) {
+                fprintf(stderr, "verify if object #%ld is matches csum -> ", i);
+                ret = quobyte_read(fh, buf, i * OBJ_SIZE, OBJ_SIZE);
+                fprintf(stderr, "ret %d ", ret);
+                assert(ret >= 0);
+                mmh3(buf, ret, 0, &h[0]);
+                assert(!memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES));
+                fprintf(stderr, "(OK)\n");
+            }
+        }
+        free(buf);
+    }
 
     fp = fopen(argv[3], "w");
     if (!fp) {
