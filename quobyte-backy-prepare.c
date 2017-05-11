@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
     FILE *fp = stdout;
     int recovery_mode = 0, verify_mode = 0;
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|<n>]]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
         exit(1);
     }
     pthread_mutex_init(&log_mutex, NULL);
