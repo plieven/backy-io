@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
     int ret = 1, num_changed = 0;
     char *bitmap = NULL;
     uint64_t obj_count, cur_version, min_version = 0;
-    char dedup_hash[DEDUP_MAC_SIZE_STR];
+    char dedup_hash[DEDUP_MAC_SIZE_STR], file_id[256];
     size_t bitmap_sz;
     struct stat st;
     FILE *fp = stdout;
@@ -40,10 +40,15 @@ int main(int argc, char** argv) {
       fprintf(stderr, "file %s open: %s (%d)\n", argv[2], strerror(errno), errno);
       goto out;
     }
-    
+
+    if (quobyte_getxattr(argv[2], "quobyte.file_id", &file_id[0], sizeof(file_id)) < 0) {
+      fprintf(stderr, "file %s could not retrieve quobyte.file_id: %s (%d)\n", argv[2], strerror(errno), errno);
+      goto out;
+    }
+    fprintf(stderr, "quobyte.file_id is %s\n", &file_id[0]);
+
     assert(!quobyte_fstat(fh, &st));
     size_t filesize = st.st_size;
-   
     fprintf(stderr, "filesize is %lu bytes\n", filesize);
     fprintf(stderr, "objectsize is %u bytes\n", OBJ_SIZE);
     obj_count = (filesize + OBJ_SIZE - 1) / OBJ_SIZE;
@@ -77,12 +82,9 @@ int main(int argc, char** argv) {
             if (jsoneq(g_metadata, tok + i, "quobyte_file_version") == 0) {
                 i++;
                 min_version = strtol(g_metadata + (tok + i)->start, NULL, 0);
-            } else if (jsoneq(g_metadata, tok + i, "quobyte_file") == 0) {
+            } else if (jsoneq(g_metadata, tok + i, "quobyte_file_id") == 0) {
                 i++;
-                vdie_if_n((tok + i)->end - (tok + i)->start != strlen(argv[2]) || strncmp(argv[2], g_metadata + (tok + i)->start, strlen(argv[2])), "quobyte_file in metadata does not match: '%.*s' != '%s'\n", (tok + i)->end - (tok + i)->start, g_metadata + (tok + i)->start, argv[2]);
-            } else if (jsoneq(g_metadata, tok + i, "quobyte_registry") == 0) {
-                i++;
-                vdie_if_n((tok + i)->end - (tok + i)->start != strlen(argv[1]) || strncmp(argv[1], g_metadata + (tok + i)->start, strlen(argv[1])), "quobyte_registry in metadata does not match: '%.*s' != '%s'\n", (tok + i)->end - (tok + i)->start, g_metadata + (tok + i)->start, argv[1]);
+                vdie_if_n((tok + i)->end - (tok + i)->start != strlen(&file_id[0]) || strncmp(&file_id[0], g_metadata + (tok + i)->start, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%.*s' != '%s'\n", (tok + i)->end - (tok + i)->start, g_metadata + (tok + i)->start, &file_id[0]);
             }
         }
         assert(min_version);
@@ -158,8 +160,7 @@ int main(int argc, char** argv) {
     fprintf(fp, "\n },\n");
     if (!recovery_mode) {
         fprintf(fp, " \"metadata\" : {\n");
-        fprintf(fp, "  \"quobyte_registry\": \"%s\",\n", argv[1]);
-        fprintf(fp, "  \"quobyte_file\": \"%s\",\n", argv[2]);
+        fprintf(fp, "  \"quobyte_file_id\": \"%s\",\n", &file_id[0]);
         fprintf(fp, "  \"quobyte_file_version\": %lu", cur_version);
         fprintf(fp, "\n },\n");
     }
