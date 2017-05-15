@@ -11,13 +11,22 @@
 #include "backy.h"
 
 #define OBJ_IS_ALLOCATED(i) (bitmap[i / 8] & (1 << (i % 8)))
-#define OBJ_SIZE (8 * 1024 * 1024)
+
+void dump_version(FILE *fp, uint64_t *version, int count) {
+    int i;
+    fprintf(fp, "{ ");
+    for (i = 0; i < count; i++) {
+         fprintf(fp, "%s%lu" , i ? ", " : "", version[i]);
+    }
+    fprintf(fp, " }");
+}
 
 int main(int argc, char** argv) {
     long i;
-    int ret = 1, num_changed = 0;
+    int ret = 1, num_changed = 0, obj_size = 0, storage_files = 0;
     char *bitmap = NULL;
-    uint64_t obj_count, cur_version, min_version = 0;
+    uint64_t obj_count;
+    uint64_t *cur_version = NULL, *min_version = NULL;
     char dedup_hash[DEDUP_MAC_SIZE_STR], file_id[256];
     size_t bitmap_sz;
     struct stat st;
@@ -50,8 +59,16 @@ int main(int argc, char** argv) {
     assert(!quobyte_fstat(fh, &st));
     size_t filesize = st.st_size;
     fprintf(stderr, "filesize is %lu bytes\n", filesize);
-    fprintf(stderr, "objectsize is %u bytes\n", OBJ_SIZE);
-    obj_count = (filesize + OBJ_SIZE - 1) / OBJ_SIZE;
+    obj_size = quobyte_get_object_size(fh);
+    assert(obj_size > 0);
+    fprintf(stderr, "objectsize is %u bytes\n", obj_size);
+    storage_files = quobyte_get_number_of_storage_files(fh);
+    assert(storage_files > 0);
+    fprintf(stderr, "number of storage files is %d\n", storage_files);
+    min_version = calloc(storage_files, sizeof(uint64_t));
+    cur_version = calloc(storage_files, sizeof(uint64_t));
+    assert(min_version && cur_version);
+    obj_count = (filesize + obj_size - 1) / obj_size;
     fprintf(stderr, "number of objects = %lu\n", obj_count);
 
     if (argc > 4) {
@@ -65,7 +82,7 @@ int main(int argc, char** argv) {
         }
         parse_json(fd);
         close(fd);
-        assert(g_block_size == OBJ_SIZE);
+        assert(g_block_size == obj_size);
         assert(g_filesize <= filesize);
         assert(g_block_count <= obj_count);
         assert(g_version == 2);
@@ -80,8 +97,16 @@ int main(int argc, char** argv) {
         vdie_if_n(tokencnt != jsmn_parse(&parser, g_metadata, strlen(g_metadata), tok, tokencnt), "json parse error", 0);
         for (i = 1; i < tokencnt; i++) {
             if (jsoneq(g_metadata, tok + i, "quobyte_file_version") == 0) {
+                int j, cnt = 0;
                 i++;
-                min_version = strtol(g_metadata + (tok + i)->start, NULL, 0);
+                vdie_if_n((tok + i)->type != JSMN_OBJECT, "json parser error: quobyte_file_version has unexpected type (%d)\n", (tok + i)->type);
+                cnt = (tok + i)->size;
+                assert(cnt <= storage_files);
+                i++;
+                for (j = i; j < i + cnt; j++) {
+                    min_version[j-i] = strtol(g_metadata + (tok + j)->start, NULL, 0);
+                }
+                i = j - 1;
             } else if (jsoneq(g_metadata, tok + i, "quobyte_file_id") == 0) {
                 i++;
                 vdie_if_n((tok + i)->end - (tok + i)->start != strlen(&file_id[0]) || strncmp(&file_id[0], g_metadata + (tok + i)->start, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%.*s' != '%s'\n", (tok + i)->end - (tok + i)->start, g_metadata + (tok + i)->start, &file_id[0]);
@@ -94,9 +119,9 @@ int main(int argc, char** argv) {
         fprintf(stderr, "object count increased from %lu to %lu\n", g_block_count, obj_count);
         g_block_mapping = realloc(g_block_mapping, obj_count * DEDUP_MAC_SIZE_BYTES);
         assert(g_block_mapping);
-        g_zeroblock = calloc(1, OBJ_SIZE);
+        g_zeroblock = calloc(1, obj_size);
         assert(g_zeroblock);
-        mmh3(g_zeroblock, OBJ_SIZE, 0, &g_zeroblock_hash[0]);
+        mmh3(g_zeroblock, obj_size, 0, &g_zeroblock_hash[0]);
         for (i = g_block_count; i < obj_count; i++) {
             memcpy(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &g_zeroblock_hash[0], DEDUP_MAC_SIZE_BYTES);
         }
@@ -109,16 +134,18 @@ int main(int argc, char** argv) {
     bitmap_sz = (obj_count + 7) / 8;
     bitmap = calloc(1, bitmap_sz);
     assert(bitmap);
-    fprintf(stderr, "min version = %lu\n", min_version);
-    ret = quobyte_get_changed_objects(fh, min_version, &cur_version, bitmap, bitmap_sz);
+    fprintf(stderr, "min version = ");
+    dump_version(stderr, min_version, storage_files);
+    fprintf(stderr, "\n");
+    ret = quobyte_get_changed_objects(fh, min_version, cur_version, storage_files, bitmap, bitmap_sz);
     if (ret < 0) {
         fprintf(stderr, "quobyte_get_changed_objects: %s (%d)\n", strerror(errno), errno);
-        quobyte_close(fh);
-        quobyte_destroy_adapter();
-        exit(1);
+        goto out;
     }
     fprintf(stderr, "number of objects (ret) = %d\n", ret);
-    fprintf(stderr, "current version = %lu\n", cur_version);
+    fprintf(stderr, "cur version = ");
+    dump_version(stderr, cur_version, storage_files);
+    fprintf(stderr, "\n");
 
     if (argc > 5) {
         const char *recovery_sw = "-r";
@@ -147,13 +174,13 @@ int main(int argc, char** argv) {
     fprintf(stderr, "number of changed objects = %d\n", num_changed);
 
     if (verify_mode) {
-        char *buf = malloc(OBJ_SIZE);
+        char *buf = malloc(obj_size);
         char h[DEDUP_MAC_SIZE_BYTES];
         assert(buf);
         for (i = 0; i < obj_count; i++) {
             if (!OBJ_IS_ALLOCATED(i)) {
                 fprintf(stderr, "verify if object #%ld is matches csum -> ", i);
-                ret = quobyte_read(fh, buf, i * OBJ_SIZE, OBJ_SIZE);
+                ret = quobyte_read(fh, buf, i * obj_size, obj_size);
                 fprintf(stderr, "ret %d ", ret);
                 assert(ret >= 0);
                 mmh3(buf, ret, 0, &h[0]);
@@ -173,7 +200,7 @@ int main(int argc, char** argv) {
     fprintf(fp, "{\n");
     fprintf(fp, " \"version\" : 2,\n");
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
-    fprintf(fp, " \"blocksize\" : %u,\n", OBJ_SIZE);
+    fprintf(fp, " \"blocksize\" : %u,\n", obj_size);
     fprintf(fp, " \"mapping\" : {");
     for (i = 0; i < obj_count; i++) {
          dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
@@ -183,7 +210,8 @@ int main(int argc, char** argv) {
     if (!recovery_mode) {
         fprintf(fp, " \"metadata\" : {\n");
         fprintf(fp, "  \"quobyte_file_id\": \"%s\",\n", &file_id[0]);
-        fprintf(fp, "  \"quobyte_file_version\": %lu", cur_version);
+        fprintf(fp, "  \"quobyte_file_version\": ");
+        dump_version(fp, cur_version, storage_files);
         fprintf(fp, "\n },\n");
     }
     fprintf(fp, " \"size\" : %lu\n", filesize);
@@ -193,6 +221,8 @@ int main(int argc, char** argv) {
     ret = 0;
 out:
     free(bitmap);
+    free(cur_version);
+    free(min_version);
     g_free();
     if (fh) quobyte_close(fh);
     quobyte_destroy_adapter();
