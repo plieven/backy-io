@@ -1480,6 +1480,7 @@ main(int argc, char **argv)
     extern int optind;
     int errors = 0;
 
+    assert(lzo_init() == LZO_E_OK);
     pthread_mutex_init(&log_mutex, NULL);
 
     if (g_arg0 = strrchr(argv[0], '/'))
