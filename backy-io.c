@@ -37,7 +37,7 @@
 #define MAX_OUTPUT_BUFFERS  64
 
 #include "minilzo/minilzo.h"
-#define COMPRESS_OVERHEAD   g_block_size / 64 + 16 + 3
+#define COMPRESS_OVERHEAD   g_block_size / 16 + 64 + 3
 
 #define plural(n)   ((n) == 1 ? "" : "s")
 
