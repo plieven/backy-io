@@ -12,13 +12,13 @@
 
 #define OBJ_IS_ALLOCATED(i) (bitmap[i / 8] & (1 << (i % 8)))
 
-void dump_version(FILE *fp, uint64_t *version, int count) {
+static void dump_version(FILE *fp, uint64_t *version, int count) {
     int i;
-    fprintf(fp, "{ ");
+    fprintf(fp, "[ ");
     for (i = 0; i < count; i++) {
          fprintf(fp, "%s%lu" , i ? ", " : "", version[i]);
     }
-    fprintf(fp, " }");
+    fprintf(fp, " ]");
 }
 
 int main(int argc, char** argv) {
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
             if (jsoneq(g_metadata, tok + i, "quobyte_file_version") == 0) {
                 int j, cnt = 0;
                 i++;
-                vdie_if_n((tok + i)->type != JSMN_OBJECT, "json parser error: quobyte_file_version has unexpected type (%d)\n", (tok + i)->type);
+                vdie_if_n((tok + i)->type != JSMN_ARRAY, "json parser error: quobyte_file_version has unexpected type (%d)\n", (tok + i)->type);
                 cnt = (tok + i)->size;
                 assert(cnt <= storage_files);
                 i++;
