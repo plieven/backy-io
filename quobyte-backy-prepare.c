@@ -137,11 +137,17 @@ int main(int argc, char** argv) {
     fprintf(stderr, "min version = ");
     dump_version(stderr, min_version, storage_files);
     fprintf(stderr, "\n");
+    struct timespec tstart={0,0}, tend={0,0};
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     ret = quobyte_get_changed_objects(fh, min_version, cur_version, storage_files, bitmap, bitmap_sz);
     if (ret < 0) {
         fprintf(stderr, "quobyte_get_changed_objects: %s (%d)\n", strerror(errno), errno);
         goto out;
     }
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(stderr, "quobyte_get_changed_objects took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
     fprintf(stderr, "number of objects (ret) = %d\n", ret);
     fprintf(stderr, "cur version = ");
     dump_version(stderr, cur_version, storage_files);
