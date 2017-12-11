@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
     struct stat st;
     FILE *fp = stdout;
     int recovery_mode = 0, verify_mode = 0;
+    struct timespec tstart={}, tend={};
     if (argc < 4) {
         fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
         exit(1);
@@ -43,7 +44,13 @@ int main(int argc, char** argv) {
     else
         g_arg0 = argv[0];
 
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     quobyte_create_adapter(argv[1]);
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(stderr, "quobyte_create_adapter took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+
     struct quobyte_fh* fh = quobyte_open(argv[2], O_RDONLY | O_DIRECT, 0600);
     if (!fh) {
       fprintf(stderr, "file %s open: %s (%d)\n", argv[2], strerror(errno), errno);
@@ -137,7 +144,6 @@ int main(int argc, char** argv) {
     fprintf(stderr, "min version = ");
     dump_version(stderr, min_version, storage_files);
     fprintf(stderr, "\n");
-    struct timespec tstart={0,0}, tend={0,0};
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     ret = quobyte_get_changed_objects(fh, min_version, cur_version, storage_files, bitmap, bitmap_sz);
     if (ret < 0) {
