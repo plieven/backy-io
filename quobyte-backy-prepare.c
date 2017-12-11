@@ -307,9 +307,9 @@ out:
         quobyte_close(fh);
         fh = NULL;
     }
-    if (interactive_mode && ret >= 0) {
-        fprintf(log, "quobyte-backy-prepare: ret = %d\n", ret);
-        goto again;
+    if (interactive_mode) {
+        fprintf(log, "quobyte-backy-prepare: ret = %d\n", ret >= 0 ? ret : 0);
+        if (ret >= 0) goto again;
     }
     quobyte_destroy_adapter();
     fclose(log);
