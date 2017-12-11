@@ -163,7 +163,13 @@ again:
            fprintf(log, "fopen %s failed: %s\n", arg_old, strerror(errno));
            goto out;
         }
+        clock_gettime(CLOCK_MONOTONIC, &tstart);
         parse_json(fd);
+        clock_gettime(CLOCK_MONOTONIC, &tend);
+        fprintf(log, "parse_json took about %.5f seconds\n",
+               ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+               ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+        fflush(log);
         close(fd);
         assert(g_block_size == obj_size);
         assert(g_filesize <= filesize);
