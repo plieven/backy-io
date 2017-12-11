@@ -130,7 +130,12 @@ again:
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
     fprintf(log, "quobyte.file_id is %s\n", &file_id[0]);
 
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     assert(!quobyte_fstat(fh, &st));
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(log, "quobyte_fstat took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
     size_t filesize = st.st_size;
     fprintf(log, "filesize is %lu bytes\n", filesize);
     obj_size = quobyte_get_object_size(fh);
