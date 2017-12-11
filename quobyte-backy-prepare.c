@@ -324,6 +324,7 @@ out:
     }
     if (interactive_mode) {
         fprintf(log, "quobyte-backy-prepare: ret = %d\n", ret >= 0 ? ret : 0);
+        fflush(log);
         if (ret >= 0) goto again;
     }
     quobyte_destroy_adapter();
