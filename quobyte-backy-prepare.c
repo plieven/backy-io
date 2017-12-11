@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdarg.h>
 #include <quobyte.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #include "backy.h"
 
@@ -23,20 +25,31 @@ static void dump_version(FILE *fp, uint64_t *version, int count) {
 
 int main(int argc, char** argv) {
     long i;
-    int ret = 1, num_changed = 0, obj_size = 0, storage_files = 0;
-    char *bitmap = NULL;
+    int ret, num_changed, obj_size, storage_files;
+    char *bitmap = NULL, *input = NULL;
     uint64_t obj_count;
     uint64_t *cur_version = NULL, *min_version = NULL;
     char dedup_hash[DEDUP_MAC_SIZE_STR], file_id[256];
     size_t bitmap_sz;
     struct stat st;
-    FILE *fp = stdout;
-    int recovery_mode = 0, verify_mode = 0;
+    FILE *log = stderr, *fp = NULL;
+    int recovery_mode, verify_mode, interactive_mode = 0;
     struct timespec tstart={}, tend={};
-    if (argc < 4) {
-        fprintf(stderr, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
+    char *arg_path, *arg_new, *arg_old, *arg_sw;
+    struct quobyte_fh* fh = NULL;
+
+    if (argc < 4 && argc != 2) {
+        fprintf(log, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
+        fprintf(log, "Usage: %s <registry>\n", argv[0]);
         exit(1);
     }
+
+    if (argc == 2) {
+        interactive_mode = 1;
+        log = stdout;
+        fprintf(log, "INTERACTIVE MODE\n");
+    }
+
     pthread_mutex_init(&log_mutex, NULL);
 
     if (g_arg0 = strrchr(argv[0], '/'))
@@ -44,47 +57,91 @@ int main(int argc, char** argv) {
     else
         g_arg0 = argv[0];
 
+    fprintf(log, "connecting to quobyte registry %s...\n", argv[1]);
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     quobyte_create_adapter(argv[1]);
     clock_gettime(CLOCK_MONOTONIC, &tend);
-    fprintf(stderr, "quobyte_create_adapter took about %.5f seconds\n",
+    fprintf(log, "quobyte_create_adapter took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 
-    struct quobyte_fh* fh = quobyte_open(argv[2], O_RDONLY | O_DIRECT, 0600);
+again:
+    ret = 1;
+    num_changed = obj_size = storage_files = 0;
+    recovery_mode = verify_mode = 0;
+    arg_path = arg_new = arg_old = arg_sw = NULL;
+    if (interactive_mode) {
+        enum { kMaxArgs = 64 };
+        int myargc = 0;
+        char *myargv[kMaxArgs];
+        input = readline("quobyte-backy-prepare> ");
+        if (!input) goto out;
+        if (!strcmp("", input)) {
+            ret = 0;
+            goto out;
+        }
+        if (!strcmp("quit", input)) {
+            ret = -1;
+            goto out;
+        }
+        add_history(input);
+        char *p2 = strtok(input, " ");
+        while (p2 && myargc < kMaxArgs-1)
+        {
+            myargv[myargc++] = p2;
+            p2 = strtok(0, " ");
+        }
+        myargv[myargc] = 0;
+        //~ int i;
+        //~ for (i = 0; i < myargc; i++) fprintf(log, "myargv[%d] = %s\n", i, myargv[i]);
+        if (myargc < 2) {
+            goto out;
+        }
+        arg_path = myargv[0];
+        arg_new = myargv[1];
+        if (myargc > 2) arg_old = myargv[2];
+        if (myargc > 3) arg_sw = myargv[3];
+    } else {
+        arg_path = argv[2];
+        arg_new = argv[3];
+        if (argc > 4) arg_old = argv[4];
+        if (argc > 5) arg_sw = argv[5];
+    }
+
+    fh = quobyte_open(arg_path, O_RDONLY | O_DIRECT, 0600);
     if (!fh) {
-      fprintf(stderr, "file %s open: %s (%d)\n", argv[2], strerror(errno), errno);
+      fprintf(log, "file %s open: %s (%d)\n", arg_path, strerror(errno), errno);
       goto out;
     }
 
-    if (quobyte_getxattr(argv[2], "quobyte.file_id", &file_id[0], sizeof(file_id)) < 0) {
-      fprintf(stderr, "file %s could not retrieve quobyte.file_id: %s (%d)\n", argv[2], strerror(errno), errno);
+    if (quobyte_getxattr(arg_path, "quobyte.file_id", &file_id[0], sizeof(file_id)) < 0) {
+      fprintf(log, "file %s could not retrieve quobyte.file_id: %s (%d)\n", arg_path, strerror(errno), errno);
       goto out;
     }
-    fprintf(stderr, "quobyte.file_id is %s\n", &file_id[0]);
+    fprintf(log, "quobyte.file_id is %s\n", &file_id[0]);
 
     assert(!quobyte_fstat(fh, &st));
     size_t filesize = st.st_size;
-    fprintf(stderr, "filesize is %lu bytes\n", filesize);
+    fprintf(log, "filesize is %lu bytes\n", filesize);
     obj_size = quobyte_get_object_size(fh);
     assert(obj_size > 0);
-    fprintf(stderr, "objectsize is %u bytes\n", obj_size);
+    fprintf(log, "objectsize is %u bytes\n", obj_size);
     storage_files = quobyte_get_number_of_storage_files(fh);
     assert(storage_files > 0);
-    fprintf(stderr, "number of storage files is %d\n", storage_files);
+    fprintf(log, "number of storage files is %d\n", storage_files);
     min_version = calloc(storage_files, sizeof(uint64_t));
     cur_version = calloc(storage_files, sizeof(uint64_t));
     assert(min_version && cur_version);
     obj_count = (filesize + obj_size - 1) / obj_size;
-    fprintf(stderr, "number of objects = %lu\n", obj_count);
+    fprintf(log, "number of objects = %lu\n", obj_count);
 
-    if (argc > 4) {
+    if (arg_old) {
         jsmn_parser parser;
         jsmntok_t *tok;
         int tokencnt;
-        int fd = open(argv[4], O_RDONLY, 0);
+        int fd = open(arg_old, O_RDONLY, 0);
         if (!fd) {
-           fprintf(stderr, "fopen %s failed: %s\n", argv[4], strerror(errno));
+           fprintf(log, "fopen %s failed: %s\n", arg_old, strerror(errno));
            goto out;
         }
         parse_json(fd);
@@ -123,7 +180,7 @@ int main(int argc, char** argv) {
         free(tok);
     }
     if (obj_count > g_block_count) {
-        fprintf(stderr, "object count increased from %lu to %lu\n", g_block_count, obj_count);
+        fprintf(log, "object count increased from %lu to %lu\n", g_block_count, obj_count);
         g_block_mapping = realloc(g_block_mapping, obj_count * DEDUP_MAC_SIZE_BYTES);
         assert(g_block_mapping);
         g_zeroblock = calloc(1, obj_size);
@@ -135,55 +192,55 @@ int main(int argc, char** argv) {
         g_block_count = obj_count;
     }
     if (filesize > g_filesize) {
-        fprintf(stderr, "filesize increased from %lu to %lu\n", g_filesize, filesize);
+        fprintf(log, "filesize increased from %lu to %lu\n", g_filesize, filesize);
         g_filesize = filesize;
     }
     bitmap_sz = (obj_count + 7) / 8;
     bitmap = calloc(1, bitmap_sz);
     assert(bitmap);
-    fprintf(stderr, "min version = ");
-    dump_version(stderr, min_version, storage_files);
-    fprintf(stderr, "\n");
+    fprintf(log, "min version = ");
+    dump_version(log, min_version, storage_files);
+    fprintf(log, "\n");
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     ret = quobyte_get_changed_objects(fh, min_version, cur_version, storage_files, bitmap, bitmap_sz);
     if (ret < 0) {
-        fprintf(stderr, "quobyte_get_changed_objects: %s (%d)\n", strerror(errno), errno);
+        fprintf(log, "quobyte_get_changed_objects: %s (%d)\n", strerror(errno), errno);
         goto out;
     }
     clock_gettime(CLOCK_MONOTONIC, &tend);
-    fprintf(stderr, "quobyte_get_changed_objects took about %.5f seconds\n",
+    fprintf(log, "quobyte_get_changed_objects took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
-    fprintf(stderr, "number of objects (ret) = %d\n", ret);
-    fprintf(stderr, "cur version = ");
-    dump_version(stderr, cur_version, storage_files);
-    fprintf(stderr, "\n");
+    fprintf(log, "number of objects (ret) = %d\n", ret);
+    fprintf(log, "cur version = ");
+    dump_version(log, cur_version, storage_files);
+    fprintf(log, "\n");
 
-    if (argc > 5) {
+    if (arg_sw) {
         const char *recovery_sw = "-r";
         const char *verify_sw = "-v";
-        if (!strncmp(argv[5], recovery_sw, strlen(recovery_sw))) {
+        if (!strncmp(arg_sw, recovery_sw, strlen(recovery_sw))) {
             recovery_mode = 1;
-            fprintf(stderr, "RECOVERY MODE selected\n");
-        } else if (!strncmp(argv[5], verify_sw, strlen(verify_sw))) {
+            fprintf(log, "RECOVERY MODE selected\n");
+        } else if (!strncmp(arg_sw, verify_sw, strlen(verify_sw))) {
             verify_mode = 1;
-            fprintf(stderr, "VERIFY ALL selected\n");
+            fprintf(log, "VERIFY ALL selected\n");
         }
     }
 
     for (i = 0; i < obj_count; i++) {
-         if (!(i % 64)) fprintf(stderr, "\n");
+         if (!interactive_mode && !(i % 64)) fprintf(log, "\n");
          if (OBJ_IS_ALLOCATED(i)) {
              if (!recovery_mode) memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
              num_changed++;
-             fprintf(stderr, "X");
+             if (!interactive_mode) fprintf(log, "X");
          } else {
              if (recovery_mode) memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
-             fprintf(stderr, ".");
+             if (!interactive_mode) fprintf(log, ".");
          }
     }
-    fprintf(stderr, "\n\n");
-    fprintf(stderr, "number of changed objects = %d\n", num_changed);
+    if (!interactive_mode) fprintf(log, "\n\n");
+    fprintf(log, "number of changed objects = %d\n", num_changed);
 
     if (verify_mode) {
         char *buf = malloc(obj_size);
@@ -191,21 +248,21 @@ int main(int argc, char** argv) {
         assert(buf);
         for (i = 0; i < obj_count; i++) {
             if (!OBJ_IS_ALLOCATED(i)) {
-                fprintf(stderr, "verify if object #%ld is matches csum -> ", i);
+                fprintf(log, "verify if object #%ld is matches csum -> ", i);
                 ret = quobyte_read(fh, buf, i * obj_size, obj_size);
-                fprintf(stderr, "ret %d ", ret);
+                fprintf(log, "ret %d ", ret);
                 assert(ret >= 0);
                 mmh3(buf, ret, 0, &h[0]);
                 assert(!memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES));
-                fprintf(stderr, "(OK)\n");
+                fprintf(log, "(OK)\n");
             }
         }
         free(buf);
     }
 
-    fp = fopen(argv[3], "w");
+    fp = fopen(arg_new, "w");
     if (!fp) {
-        fprintf(stderr, "fopen failed: %s\n", argv[3]);
+        fprintf(log, "fopen failed: %s\n", arg_new);
         goto out;
     }
 
@@ -229,15 +286,32 @@ int main(int argc, char** argv) {
     fprintf(fp, " \"size\" : %lu\n", filesize);
     fprintf(fp, "}\n");
 
-    fprintf(stderr, "\nDONE backy backup job json written to: %s\n", argv[3]);
+    fprintf(log, "\nDONE backy backup job json written to: %s\n", arg_new);
     ret = 0;
+
 out:
     free(bitmap);
+    bitmap = NULL;
+    free(input);
+    input = NULL;
     free(cur_version);
+    cur_version = NULL;
     free(min_version);
+    min_version = NULL;
     g_free();
-    if (fh) quobyte_close(fh);
+    if (fp) {
+        fclose(fp);
+        fp = NULL;
+    }
+    if (fh) {
+        quobyte_close(fh);
+        fh = NULL;
+    }
+    if (interactive_mode && ret >= 0) {
+        fprintf(log, "quobyte-backy-prepare: ret = %d\n", ret);
+        goto again;
+    }
     quobyte_destroy_adapter();
-    fclose(fp);
-    exit(ret);
+    fclose(log);
+    exit(ret > 0 ? : 0);
 }

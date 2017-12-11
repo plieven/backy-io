@@ -25,7 +25,7 @@ $(PROG) : $(MAIN_OBJ) $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) $(MAIN_OBJ) $(LDFLAGS)
 
 quobyte-backy-prepare : quobyte-backy-prepare.o $(EXT_OBJ)
-	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-prepare.o $(LDFLAGS) -lquobyte
+	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-prepare.o $(LDFLAGS) -lquobyte -lreadline
 
 clean :
 	rm -f $(TARGETS) $(MAIN_OBJ) $(EXT_OBJ) *.o

@@ -225,7 +225,16 @@ static void parse_json(int fd)
 
 static void g_free() {
     free(g_zeroblock);
+    g_zeroblock = NULL;
     free(g_metadata);
+    g_metadata = NULL;
     free(g_block_mapping);
+    g_block_mapping = NULL;
     free(g_block_is_compressed);
+    g_block_is_compressed = NULL;
+    g_block_size = CBLK_SIZE;
+    g_version = 1;
+    g_filesize = 0;     /* size of the uncompressed data */
+    g_block_count = 0;
+    g_crc32c_expected = 0xffffffff;
 }
