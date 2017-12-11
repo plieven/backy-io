@@ -108,16 +108,26 @@ again:
         if (argc > 5) arg_sw = argv[5];
     }
 
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     fh = quobyte_open(arg_path, O_RDONLY | O_DIRECT, 0600);
     if (!fh) {
       fprintf(log, "file %s open: %s (%d)\n", arg_path, strerror(errno), errno);
       goto out;
     }
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(log, "quobyte_open took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     if (quobyte_getxattr(arg_path, "quobyte.file_id", &file_id[0], sizeof(file_id)) < 0) {
       fprintf(log, "file %s could not retrieve quobyte.file_id: %s (%d)\n", arg_path, strerror(errno), errno);
       goto out;
     }
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(log, "quobyte_getxattr took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
     fprintf(log, "quobyte.file_id is %s\n", &file_id[0]);
 
     assert(!quobyte_fstat(fh, &st));
