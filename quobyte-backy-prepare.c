@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
     fprintf(log, "quobyte_create_adapter took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+    fflush(log);
 
 again:
     ret = 1;
@@ -118,6 +119,7 @@ again:
     fprintf(log, "quobyte_open took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+    fflush(log);
 
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     if (quobyte_getxattr(arg_path, "quobyte.file_id", &file_id[0], sizeof(file_id)) < 0) {
@@ -129,6 +131,7 @@ again:
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
     fprintf(log, "quobyte.file_id is %s\n", &file_id[0]);
+    fflush(log);
 
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     assert(!quobyte_fstat(fh, &st));
@@ -136,6 +139,7 @@ again:
     fprintf(log, "quobyte_fstat took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+    fflush(log);
     size_t filesize = st.st_size;
     fprintf(log, "filesize is %lu bytes\n", filesize);
     obj_size = quobyte_get_object_size(fh);
@@ -226,6 +230,7 @@ again:
     fprintf(log, "quobyte_get_changed_objects took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+    fflush(log);
     fprintf(log, "number of objects (ret) = %d\n", ret);
     fprintf(log, "cur version = ");
     dump_version(log, cur_version, storage_files);
@@ -325,6 +330,7 @@ out:
         fprintf(log, "quobyte_close took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+        fflush(log);
         fh = NULL;
     }
     if (interactive_mode) {
