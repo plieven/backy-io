@@ -314,7 +314,12 @@ out:
         fp = NULL;
     }
     if (fh) {
+        clock_gettime(CLOCK_MONOTONIC, &tstart);
         quobyte_close(fh);
+        clock_gettime(CLOCK_MONOTONIC, &tend);
+        fprintf(log, "quobyte_close took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
         fh = NULL;
     }
     if (interactive_mode) {
