@@ -1,6 +1,3 @@
-[submodule "jsmn"]
-	path = jsmn
-	url = https://github.com/zserge/jsmn
 [submodule "smhasher"]
 	path = smhasher
 	url = https://github.com/aappleby/smhasher.git
