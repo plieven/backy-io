@@ -3,7 +3,7 @@
 PROG =		backy-io
 
 MAIN_OBJ =	backy-io.o
-EXT_OBJ  =  jsmn/jsmn.o minilzo/minilzo.o smhasher/src/MurmurHash3.o
+EXT_OBJ  =  json-parser/json.o minilzo/minilzo.o smhasher/src/MurmurHash3.o
 
 TARGETS =	$(PROG)
 
@@ -15,7 +15,7 @@ CFLAGS =	$(ARCH) $(COPT) $(LFS_FLAGS) -Wunused-function -Wunused-label -Wunused-
 
 #------------------------------------------------------------------------
 
-LDFLAGS =	$(ARCH) -O3 -pthread
+LDFLAGS =	$(ARCH) -O3 -pthread -lm
 
 #------------------------------------------------------------------------
 
@@ -26,6 +26,9 @@ $(PROG) : $(MAIN_OBJ) $(EXT_OBJ)
 
 quobyte-backy-prepare : quobyte-backy-prepare.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-prepare.o $(LDFLAGS) -lquobyte -lreadline
+
+debug : debug.o $(EXT_OBJ)
+	$(CC) -o $@ $(EXT_OBJ) debug.o $(LDFLAGS)
 
 clean :
 	rm -f $(TARGETS) $(MAIN_OBJ) $(EXT_OBJ) *.o

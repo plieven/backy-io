@@ -1,5 +1,4 @@
-#define JSMN_STRICT
-#include "jsmn/jsmn.h"
+#include "json-parser/json.h"
 
 #include "smhasher/src/MurmurHash3.h"
 #define DEDUP_MAC_NAME "mmh3-x64-128"
@@ -89,38 +88,112 @@ pthread_mutex_t log_mutex;
     if (cond) { \
         diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); exit(1); } }
 
-static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
-    if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
-            strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
-        return 0;
-    }
-    return -1;
+//~ static int jsoneq(const char *json, jsmntok_t *tok, const char *s) {
+    //~ if (tok->type == JSMN_STRING && (int) strlen(s) == tok->end - tok->start &&
+            //~ strncmp(json + tok->start, s, tok->end - tok->start) == 0) {
+        //~ return 0;
+    //~ }
+    //~ return -1;
+//~ }
+
+//~ static int hex2dec(char c)
+//~ {
+    //~ if (c >= '0' && c <= '9')
+        //~ return (int) c - '0';
+    //~ else
+    //~ {
+        //~ if (c >= 'A' && c <= 'F')
+            //~ return (int) (10 + c - 'A');
+        //~ else if (c >= 'a' && c <= 'f')
+            //~ return (int) (10 + c - 'a');
+        //~ else
+            //~ return 0;
+    //~ }
+//~ }
+
+static void print_depth_shift(int depth)
+{
+        int j;
+        for (j=0; j < depth; j++) {
+                printf(" ");
+        }
 }
 
-static int hex2dec(char c)
+static void process_value(json_value* value, int depth);
+
+static void process_object(json_value* value, int depth)
 {
-    if (c >= '0' && c <= '9')
-        return (int) c - '0';
-    else
-    {
-        if (c >= 'A' && c <= 'F')
-            return (int) (10 + c - 'A');
-        else if (c >= 'a' && c <= 'f')
-            return (int) (10 + c - 'a');
-        else
-            return 0;
-    }
+        int length, x;
+        if (value == NULL) {
+                return;
+        }
+        length = value->u.object.length;
+        for (x = 0; x < length; x++) {
+                print_depth_shift(depth);
+                printf("object[%d].name = %s ptr = %p length = %d\n", x, value->u.object.values[x].name, value->u.string.ptr, value->u.string.length);
+                process_value(value->u.object.values[x].value, depth+1);
+        }
+}
+
+static void process_array(json_value* value, int depth)
+{
+        int length, x;
+        if (value == NULL) {
+                return;
+        }
+        length = value->u.array.length;
+        printf("array\n");
+        for (x = 0; x < length; x++) {
+                process_value(value->u.array.values[x], depth);
+        }
+}
+
+static void process_value(json_value* value, int depth)
+{
+        int j;
+        if (value == NULL) {
+                return;
+        }
+        if (value->type != json_object) {
+                print_depth_shift(depth);
+        }
+        if (depth > 1) return;
+        switch (value->type) {
+                case json_none:
+                        printf("none\n");
+                        break;
+                case json_object:
+                        process_object(value, depth+1);
+                        break;
+                case json_array:
+                        process_array(value, depth+1);
+                        break;
+                case json_integer:
+                        printf("int: %10" PRId64 "\n", value->u.integer);
+                        break;
+                case json_double:
+                        printf("double: %f\n", value->u.dbl);
+                        break;
+                case json_string:
+                        printf("string: %s\n", value->u.string.ptr);
+                        break;
+                case json_boolean:
+                        printf("bool: %d\n", value->u.boolean);
+                        break;
+        }
 }
 
 static void parse_json(int fd)
 {
     FILE *input;
     char *buf;
-    int i,j,k;
+    //~ int i,j,k;
     size_t sz, count;
-    jsmn_parser parser;
-    jsmntok_t *tok;
-    int tokencnt;
+    json_char* json;
+    json_value* value;
+    //~ jsmn_parser parser;
+    //~ jsmntok_t *tok;
+    //~ int tokencnt;
 
     input = fdopen(fd, "r");
     die_if(! input, ESTR_FDOPEN);
@@ -135,76 +208,79 @@ static void parse_json(int fd)
     count = fread(buf, 1, sz, input);
     die_if(count != sz, ESTR_FREAD);
 
-    jsmn_init(&parser);
-    tokencnt = jsmn_parse(&parser, buf, sz, NULL, 0);
+    json = (json_char*) buf;
 
-    tok = malloc(sizeof(*tok) * tokencnt);
-    die_if(!tok, ESTR_MALLOC);
+    value = json_parse(json, sz);
 
-    jsmn_init(&parser);
-    vdie_if_n(tokencnt != jsmn_parse(&parser, buf, sz, tok, tokencnt), "json parse error", 0);
+    vdie_if_n(!value, "json parse error", 0);
 
-    for (i = 1; i < tokencnt; i++) {
-        if (jsoneq(buf, tok + i, "size") == 0) {
-            g_filesize = strtol(buf + (tok + i + 1)->start, NULL, 0);
-            i++;
-        } else if (jsoneq(buf, tok + i, "version") == 0) {
-            g_version = strtol(buf + (tok + i + 1)->start, NULL, 0);
-            i++;
-        } else if (jsoneq(buf, tok + i, "blocksize") == 0) {
-            g_block_size = strtol(buf + (tok + i + 1)->start, NULL, 0);
-            i++;
-        } else if (jsoneq(buf, tok + i, "metadata") == 0) {
-            i++;
-            int end = (tok + i)->end;
-            size_t len = (tok + i)->end - (tok + i)->start;
-            g_metadata = malloc(len + 1);
-            die_if(!g_metadata, ESTR_MALLOC);
-            g_metadata[len] = 0;
-            g_metadata = memcpy(g_metadata, buf + (tok + i)->start, len);
-            BACKY_LOG("metadata: %s\n", g_metadata);
-            while ((tok + i + 1)->start < end) i++;
-        } else if (jsoneq(buf, tok + i, "hash") == 0) {
-            i++;
-            vdie_if_n((tok + i)->end - (tok + i)->start != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, buf + (tok + i)->start, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
-        } else if (jsoneq(buf, tok + i, "crc32c") == 0) {
-            g_crc32c_expected = (hex2dec(buf[(tok + i + 1)->start + 0]) << 28) +
-                              (hex2dec(buf[(tok + i + 1)->start + 1]) << 24) +
-                              (hex2dec(buf[(tok + i + 1)->start + 2]) << 20) +
-                              (hex2dec(buf[(tok + i + 1)->start + 3]) << 16) +
-                              (hex2dec(buf[(tok + i + 1)->start + 4]) << 12) +
-                              (hex2dec(buf[(tok + i + 1)->start + 5]) << 8) +
-                              (hex2dec(buf[(tok + i + 1)->start + 6]) << 4) +
-                              (hex2dec(buf[(tok + i + 1)->start + 7]) << 0);
-            BACKY_LOG("g_crc32c_expected: %08x\n", g_crc32c_expected);
-            i += 1;
-        } else if (jsoneq(buf, tok + i, "mapping") == 0) {
-            vdie_if_n((tok + i + 1)->type != JSMN_OBJECT, "json parser error: mapping has unexpected type (%d)\n", (tok + i + 1)->type);
-            g_block_count = (tok + i + 1)->size;
-            i+=2;
-            die_if(g_block_mapping, ESTR_MALLOC);
-            g_block_mapping = malloc((DEDUP_MAC_SIZE_BYTES) * g_block_count);
-            die_if(!g_block_mapping, ESTR_MALLOC);
-            g_block_is_compressed = malloc(g_block_count);
-            die_if(!g_block_is_compressed, ESTR_MALLOC);
-            for (j = i; j < i + g_block_count * 2; j += 2) {
-                unsigned long seq = strtol(buf + (tok + j)->start, NULL, 0);
-                vdie_if_n(seq != (j - i) / 2, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", (j - i) / 2, seq);
-                vdie_if_n((tok + j +1)->end - (tok + j +1)->start != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d\n", DEDUP_MAC_SIZE / 4, (tok + j +1)->end - (tok + j +1)->start);
-                for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
-                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (hex2dec(buf[(tok + j + 1)->start + k * 2]) << 4) +
-                                                                    hex2dec(buf[(tok + j + 1)->start + k * 2 + 1]);
-                }
-            }
-            i = j - 1;
-        } else {
-            if ((tok + i)->type == JSMN_STRING) { 
-                vdie_if_n(1, "json parser error: unexpected token '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
-            } else {
-                vdie_if_n(1, "json parser error: unexpected token (type %d)\n", (tok + i)->type);
-            }
-        }
-    }
+    process_value(value, 0);
+
+    json_value_free(value);
+
+    return;
+
+    //~ for (i = 1; i < tokencnt; i++) {
+        //~ if (jsoneq(buf, tok + i, "size") == 0) {
+            //~ g_filesize = strtol(buf + (tok + i + 1)->start, NULL, 0);
+            //~ i++;
+        //~ } else if (jsoneq(buf, tok + i, "version") == 0) {
+            //~ g_version = strtol(buf + (tok + i + 1)->start, NULL, 0);
+            //~ i++;
+        //~ } else if (jsoneq(buf, tok + i, "blocksize") == 0) {
+            //~ g_block_size = strtol(buf + (tok + i + 1)->start, NULL, 0);
+            //~ i++;
+        //~ } else if (jsoneq(buf, tok + i, "metadata") == 0) {
+            //~ i++;
+            //~ int end = (tok + i)->end;
+            //~ size_t len = (tok + i)->end - (tok + i)->start;
+            //~ g_metadata = malloc(len + 1);
+            //~ die_if(!g_metadata, ESTR_MALLOC);
+            //~ g_metadata[len] = 0;
+            //~ g_metadata = memcpy(g_metadata, buf + (tok + i)->start, len);
+            //~ BACKY_LOG("metadata: %s\n", g_metadata);
+            //~ while ((tok + i + 1)->start < end) i++;
+        //~ } else if (jsoneq(buf, tok + i, "hash") == 0) {
+            //~ i++;
+            //~ vdie_if_n((tok + i)->end - (tok + i)->start != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, buf + (tok + i)->start, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
+        //~ } else if (jsoneq(buf, tok + i, "crc32c") == 0) {
+            //~ g_crc32c_expected = (hex2dec(buf[(tok + i + 1)->start + 0]) << 28) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 1]) << 24) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 2]) << 20) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 3]) << 16) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 4]) << 12) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 5]) << 8) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 6]) << 4) +
+                              //~ (hex2dec(buf[(tok + i + 1)->start + 7]) << 0);
+            //~ BACKY_LOG("g_crc32c_expected: %08x\n", g_crc32c_expected);
+            //~ i += 1;
+        //~ } else if (jsoneq(buf, tok + i, "mapping") == 0) {
+            //~ vdie_if_n((tok + i + 1)->type != JSMN_OBJECT, "json parser error: mapping has unexpected type (%d)\n", (tok + i + 1)->type);
+            //~ g_block_count = (tok + i + 1)->size;
+            //~ i+=2;
+            //~ die_if(g_block_mapping, ESTR_MALLOC);
+            //~ g_block_mapping = malloc((DEDUP_MAC_SIZE_BYTES) * g_block_count);
+            //~ die_if(!g_block_mapping, ESTR_MALLOC);
+            //~ g_block_is_compressed = malloc(g_block_count);
+            //~ die_if(!g_block_is_compressed, ESTR_MALLOC);
+            //~ for (j = i; j < i + g_block_count * 2; j += 2) {
+                //~ unsigned long seq = strtol(buf + (tok + j)->start, NULL, 0);
+                //~ vdie_if_n(seq != (j - i) / 2, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", (j - i) / 2, seq);
+                //~ vdie_if_n((tok + j +1)->end - (tok + j +1)->start != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d\n", DEDUP_MAC_SIZE / 4, (tok + j +1)->end - (tok + j +1)->start);
+                //~ for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
+                    //~ g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (hex2dec(buf[(tok + j + 1)->start + k * 2]) << 4) +
+                                                                    //~ hex2dec(buf[(tok + j + 1)->start + k * 2 + 1]);
+                //~ }
+            //~ }
+            //~ i = j - 1;
+        //~ } else {
+            //~ if ((tok + i)->type == JSMN_STRING) { 
+                //~ vdie_if_n(1, "json parser error: unexpected token '%.*s'\n", (tok + i)->end - (tok + i)->start, buf + (tok + i)->start);
+            //~ } else {
+                //~ vdie_if_n(1, "json parser error: unexpected token (type %d)\n", (tok + i)->type);
+            //~ }
+        //~ }
+    //~ }
 
     vdie_if_n(g_version < 1 || g_version > 2, "unsupported version %d\n", g_version);
     vdie_if_n(g_version == 1 && g_block_size != 4096*1024, "unsupported version 1 block size %lu\n", g_block_size);
@@ -218,8 +294,8 @@ static void parse_json(int fd)
 
     BACKY_LOG("blockcount: %lu\n", g_block_count);
 
-    free(tok);
-    free(buf);
+    //~ free(tok);
+    //~ free(buf);
     fclose(input);
 }
 

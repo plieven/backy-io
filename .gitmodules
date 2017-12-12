@@ -4,3 +4,6 @@
 [submodule "smhasher"]
 	path = smhasher
 	url = https://github.com/aappleby/smhasher.git
+[submodule "json-parser"]
+	path = json-parser
+	url = git@github.com:plieven/json-parser.git
