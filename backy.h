@@ -136,12 +136,12 @@ static void parse_json(int fd)
         if (val->type == json_integer && !strcmp(name, "size")) {
             g_filesize = val->u.integer;
         } else if (val->type == json_integer && !strcmp(name, "blocksize")) {
-			g_block_size = val->u.integer;
-	    } else if (val->type == json_integer && !strcmp(name, "version")) {
-			g_version = val->u.integer;
-	    } else if (val->type == json_string && !strcmp(name, "hash")) {
-			vdie_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", val->u.string.length, val->u.string.ptr);
-		} else if (val->type == json_string && !strcmp(name, "crc32c")) {
+            g_block_size = val->u.integer;
+        } else if (val->type == json_integer && !strcmp(name, "version")) {
+            g_version = val->u.integer;
+        } else if (val->type == json_string && !strcmp(name, "hash")) {
+            vdie_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", val->u.string.length, val->u.string.ptr);
+        } else if (val->type == json_string && !strcmp(name, "crc32c")) {
             g_crc32c_expected = (hex2dec(val->u.string.ptr[0]) << 28) +
                               (hex2dec(val->u.string.ptr[1]) << 24) +
                               (hex2dec(val->u.string.ptr[2]) << 20) +

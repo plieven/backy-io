@@ -155,9 +155,7 @@ again:
     fprintf(log, "number of objects = %lu\n", obj_count);
 
     if (arg_old) {
-        jsmn_parser parser;
-        jsmntok_t *tok;
-        int tokencnt;
+        json_value* value;
         int fd = open(arg_old, O_RDONLY, 0);
         if (!fd) {
            fprintf(log, "fopen %s failed: %s\n", arg_old, strerror(errno));
@@ -176,33 +174,30 @@ again:
         assert(g_block_count <= obj_count);
         assert(g_version == 2);
         assert(g_metadata);
-        jsmn_init(&parser);
-        tokencnt = jsmn_parse(&parser, g_metadata, strlen(g_metadata), NULL, 0);
 
-        tok = malloc(sizeof(*tok) * tokencnt);
-        die_if(!tok, ESTR_MALLOC);
+        value = json_parse((json_char*) g_metadata, strlen(g_metadata));
 
-        jsmn_init(&parser);
-        vdie_if_n(tokencnt != jsmn_parse(&parser, g_metadata, strlen(g_metadata), tok, tokencnt), "json parse error", 0);
-        for (i = 1; i < tokencnt; i++) {
-            if (jsoneq(g_metadata, tok + i, "quobyte_file_version") == 0) {
-                int j, cnt = 0;
-                i++;
-                vdie_if_n((tok + i)->type != JSMN_ARRAY, "json parser error: quobyte_file_version has unexpected type (%d)\n", (tok + i)->type);
-                cnt = (tok + i)->size;
-                assert(cnt <= storage_files);
-                i++;
-                for (j = i; j < i + cnt; j++) {
-                    min_version[j-i] = strtol(g_metadata + (tok + j)->start, NULL, 0);
+        vdie_if_n(!value || value->type != json_object, "json parse error", 0);
+
+        for (i = 0; i < value->u.object.length; i++) {
+            json_char *name = value->u.object.values[i].name;
+            json_value *val = value->u.object.values[i].value;
+            if (!strcmp(name, "quobyte_file_version")) {
+                int j;
+                vdie_if_n(val->type != json_array, "json parser error: quobyte_file_version has unexpected type (%d)\n", val->type);
+                assert(val->u.array.length <= storage_files);
+                for (j = 0; j < val->u.array.length; j++) {
+                    json_value *entry = val->u.array.values[j];
+                    vdie_if_n(entry->type != json_integer, "json parser error: quobyte_file_version entry unexpected type (%d)\n", entry->type);
+                    min_version[j] = entry->u.integer;
+                    assert(min_version[j] >= 0);
                 }
-                i = j - 1;
-            } else if (jsoneq(g_metadata, tok + i, "quobyte_file_id") == 0) {
-                i++;
-                vdie_if_n((tok + i)->end - (tok + i)->start != strlen(&file_id[0]) || strncmp(&file_id[0], g_metadata + (tok + i)->start, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%.*s' != '%s'\n", (tok + i)->end - (tok + i)->start, g_metadata + (tok + i)->start, &file_id[0]);
+            } else if (!strcmp(name, "quobyte_file_id")) {
+                vdie_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)\n", val->type);
+                vdie_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%s' != '%s'\n", val->u.string, &file_id[0]);
             }
         }
-        assert(min_version);
-        free(tok);
+        json_value_free(value);
     }
     if (obj_count > g_block_count) {
         fprintf(log, "object count increased from %lu to %lu\n", g_block_count, obj_count);
