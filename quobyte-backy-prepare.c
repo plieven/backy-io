@@ -189,8 +189,8 @@ again:
                 for (j = 0; j < val->u.array.length; j++) {
                     json_value *entry = val->u.array.values[j];
                     vdie_if_n(entry->type != json_integer, "json parser error: quobyte_file_version entry unexpected type (%d)\n", entry->type);
+                    assert(entry->u.integer >= 0);
                     min_version[j] = entry->u.integer;
-                    assert(min_version[j] >= 0);
                 }
             } else if (!strcmp(name, "quobyte_file_id")) {
                 vdie_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)\n", val->type);
