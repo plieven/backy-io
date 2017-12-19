@@ -162,7 +162,10 @@ again:
            goto out;
         }
         clock_gettime(CLOCK_MONOTONIC, &tstart);
-        parse_json(fd);
+        if (parse_json(fd)) {
+           fprintf(log, "cant json parse: %s\n", arg_old);
+           goto out;
+        }
         clock_gettime(CLOCK_MONOTONIC, &tend);
         fprintf(log, "parse_json took about %.5f seconds\n",
                ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -

@@ -1647,14 +1647,14 @@ main(int argc, char **argv)
         struct stat st;
         vdie_if((write_fd = open(g_out_path, O_RDONLY | O_LARGEFILE,
                 0)) < 0, "open: %s", optarg);
-        parse_json(write_fd);
+        if (parse_json(write_fd)) exit(1);
         close(write_fd);
         verify_chunks();
         vdie_if(fstat(read_fd, &st) < 0, "fstat failed", 0);
         vdie_if(st.st_size != g_filesize, "input filesize does not match backup filesize (%lu != %lu)", st.st_size, g_filesize);
         compress_fd(read_fd);
     } else if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
-        parse_json(read_fd);
+        if (parse_json(read_fd)) exit(1);
         verify_chunks();
         if (g_opt_verify_simple) goto out;
         init_zero_block();

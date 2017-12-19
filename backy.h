@@ -88,6 +88,11 @@ pthread_mutex_t log_mutex;
     if (cond) { \
         diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); exit(1); } }
 
+#define vgotoout_if_n(cond, str, ...) { \
+    if (cond) { \
+        diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); goto out; } }
+
+
 static int hex2dec(char c)
 {
     if (c >= '0' && c <= '9')
@@ -103,11 +108,11 @@ static int hex2dec(char c)
     }
 }
 
-static void parse_json(int fd)
+static int parse_json(int fd)
 {
     FILE *input;
     char *buf;
-    int i,j,k;
+    int i,j,k, ret = 1;
     size_t sz, count;
     json_value* value;
 
@@ -128,7 +133,7 @@ static void parse_json(int fd)
 
     value = json_parse((json_char*) buf, sz);
 
-    vdie_if_n(!value || value->type != json_object, "json parse error", 0);
+    vgotoout_if_n(!value || value->type != json_object, "json parse error", 0);
 
     for (i = 0; i < value->u.object.length; i++) {
         json_char *name = value->u.object.values[i].name;
@@ -140,7 +145,7 @@ static void parse_json(int fd)
         } else if (val->type == json_integer && !strcmp(name, "version")) {
             g_version = val->u.integer;
         } else if (val->type == json_string && !strcmp(name, "hash")) {
-            vdie_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", val->u.string.length, val->u.string.ptr);
+            vgotoout_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'\n", val->u.string.length, val->u.string.ptr);
         } else if (val->type == json_string && !strcmp(name, "crc32c")) {
             g_crc32c_expected = (hex2dec(val->u.string.ptr[0]) << 28) +
                               (hex2dec(val->u.string.ptr[1]) << 24) +
@@ -167,33 +172,37 @@ static void parse_json(int fd)
             for (j = 0; j < g_block_count; j++) {
                 json_value *entry = val->u.object.values[j].value;
                 unsigned long seq = strtol(val->u.object.values[j].name, NULL, 0);
-                vdie_if_n(j != seq, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", j, seq);
-                vdie_if_n(entry->type != json_string, "json parser error: invalid json_type for mapping entry %lu", j);
-                vdie_if_n(entry->u.string.length != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d\n", DEDUP_MAC_SIZE / 4, entry->u.string.length);
+                vgotoout_if_n(j != seq, "json parser error: invalid sequence in mapping: expected %lu found %lu\n", j, seq);
+                vgotoout_if_n(entry->type != json_string, "json parser error: invalid json_type for mapping entry %lu", j);
+                vgotoout_if_n(entry->u.string.length != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d\n", DEDUP_MAC_SIZE / 4, entry->u.string.length);
                 for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
                     g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (hex2dec(entry->u.string.ptr[k * 2]) << 4) +
                                                                     hex2dec(entry->u.string.ptr[k * 2 + 1]);
                 }
             }
         } else {
-            vdie_if_n(1, "json parser error: unexpected token '%s' (type %d)\n", name, val->type);
+            vgotoout_if_n(1, "json parser error: unexpected token '%s' (type %d)\n", name, val->type);
         }
     }
 
-    vdie_if_n(g_version < 1 || g_version > 2, "unsupported version %d\n", g_version);
-    vdie_if_n(g_version == 1 && g_block_size != 4096*1024, "unsupported version 1 block size %lu\n", g_block_size);
-    vdie_if_n(g_block_size % MIN_CBLK_SIZE || g_block_size < MIN_CBLK_SIZE || g_block_size > MAX_CBLK_SIZE, "unsupported block size %lu\n", g_block_size);
+    vgotoout_if_n(g_version < 1 || g_version > 2, "unsupported version %d\n", g_version);
+    vgotoout_if_n(g_version == 1 && g_block_size != 4096*1024, "unsupported version 1 block size %lu\n", g_block_size);
+    vgotoout_if_n(g_block_size % MIN_CBLK_SIZE || g_block_size < MIN_CBLK_SIZE || g_block_size > MAX_CBLK_SIZE, "unsupported block size %lu\n", g_block_size);
 
     BACKY_LOG("version: %d\n", g_version);
     BACKY_LOG("blocksize: %u\n", g_block_size);
     BACKY_LOG("size: %lu\n", g_filesize);
 
-    vdie_if_n(g_block_count != (g_filesize + g_block_size - 1) / (g_block_size), "invalid number of chunks: expected %lu found %lu\n", (g_filesize + g_block_size - 1) / (g_block_size), g_block_count);
+    vgotoout_if_n(g_block_count != (g_filesize + g_block_size - 1) / (g_block_size), "invalid number of chunks: expected %lu found %lu\n", (g_filesize + g_block_size - 1) / (g_block_size), g_block_count);
 
     BACKY_LOG("blockcount: %lu\n", g_block_count);
 
+    ret = 0;
+out:
     free(buf);
     json_value_free(value);
+
+    return ret;
 }
 
 static void g_free() {
