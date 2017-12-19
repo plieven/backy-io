@@ -94,7 +94,7 @@ again:
         }
         myargv[myargc] = 0;
         //~ int i;
-        //~ for (i = 0; i < myargc; i++) fprintf(log, "myargv[%d] = %s\n", i, myargv[i]);
+        //~ for (i = 0; i < myargc; i++) fprintf(log, "myargv[%d] = '%s'\n", i, myargv[i]);
         if (myargc < 2) {
             goto out;
         }
@@ -177,7 +177,11 @@ again:
 
         value = json_parse((json_char*) g_metadata, strlen(g_metadata));
 
-        vdie_if_n(!value || value->type != json_object, "json parse error", 0);
+        if (!value || value->type != json_object) {
+            fprintf(log, "json metadata parse error\n");
+            json_value_free(value);
+            goto out;
+        }
 
         for (i = 0; i < value->u.object.length; i++) {
             json_char *name = value->u.object.values[i].name;
