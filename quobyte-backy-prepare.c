@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
     struct timespec tstart={}, tend={};
     char *arg_path, *arg_new, *arg_old, *arg_sw;
     struct quobyte_fh* fh = NULL;
+    json_value* value = NULL;
 
     if (argc < 4 && argc != 2) {
         fprintf(log, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
@@ -156,7 +157,6 @@ again:
     fprintf(log, "number of objects = %lu\n", obj_count);
 
     if (arg_old) {
-        json_value* value;
         int fd = open(arg_old, O_RDONLY, 0);
         if (!fd) {
            fprintf(log, "fopen %s failed: %s\n", arg_old, strerror(errno));
@@ -183,7 +183,6 @@ again:
 
         if (!value || value->type != json_object) {
             fprintf(log, "json metadata parse error\n");
-            json_value_free(value);
             goto out;
         }
 
@@ -192,7 +191,7 @@ again:
             json_value *val = value->u.object.values[i].value;
             if (!strcmp(name, "quobyte_file_version")) {
                 int j;
-                vdie_if_n(val->type != json_array, "json parser error: quobyte_file_version has unexpected type (%d)\n", val->type);
+                vgotoout_if_n(val->type != json_array, "json parser error: quobyte_file_version has unexpected type (%d)\n", val->type);
                 assert(val->u.array.length <= storage_files);
                 for (j = 0; j < val->u.array.length; j++) {
                     json_value *entry = val->u.array.values[j];
@@ -201,11 +200,10 @@ again:
                     min_version[j] = entry->u.integer;
                 }
             } else if (!strcmp(name, "quobyte_file_id")) {
-                vdie_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)\n", val->type);
-                vdie_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%s' != '%s'\n", val->u.string, &file_id[0]);
+                vgotoout_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)\n", val->type);
+                vgotoout_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%s' != '%s'\n", val->u.string, &file_id[0]);
             }
         }
-        json_value_free(value);
     }
     if (obj_count > g_block_count) {
         fprintf(log, "object count increased from %lu to %lu\n", g_block_count, obj_count);
@@ -328,6 +326,10 @@ out:
     free(min_version);
     min_version = NULL;
     g_free();
+    if (value) {
+        json_value_free(value);
+        value = NULL;
+    }
     if (fp) {
         fclose(fp);
         fp = NULL;
