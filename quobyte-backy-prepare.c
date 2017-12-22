@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
     uint64_t obj_count;
     uint64_t *cur_version = NULL, *min_version = NULL;
     char dedup_hash[DEDUP_MAC_SIZE_STR], file_id[256];
-    size_t bitmap_sz;
+    size_t bitmap_sz, file_id_sz;
     struct stat st;
     FILE *log = stderr, *fp = NULL;
     int recovery_mode, verify_mode, interactive_mode = 0;
@@ -122,10 +122,11 @@ again:
     fflush(log);
 
     clock_gettime(CLOCK_MONOTONIC, &tstart);
-    if (quobyte_getxattr(arg_path, "quobyte.file_id", &file_id[0], sizeof(file_id)) < 0) {
+    if ((file_id_sz = quobyte_getxattr(arg_path, "quobyte.file_id", &file_id[0], sizeof(file_id))) < 0) {
       fprintf(log, "file %s could not retrieve quobyte.file_id: %s (%d)\n", arg_path, strerror(errno), errno);
       goto out;
     }
+    file_id[file_id_sz] = 0;
     clock_gettime(CLOCK_MONOTONIC, &tend);
     fprintf(log, "quobyte_getxattr took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
