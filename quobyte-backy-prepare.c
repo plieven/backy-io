@@ -201,7 +201,7 @@ again:
                 }
             } else if (!strcmp(name, "quobyte_file_id")) {
                 vgotoout_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)\n", val->type);
-                vgotoout_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file in metadata does not match: '%s' != '%s'\n", val->u.string, &file_id[0]);
+                vgotoout_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file_id in metadata does not match!");
             }
         }
     }
