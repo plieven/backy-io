@@ -1649,7 +1649,7 @@ main(int argc, char **argv)
                 0)) < 0, "open: %s", optarg);
         if (parse_json(write_fd)) exit(1);
         close(write_fd);
-        verify_chunks();
+        if (!g_zeroblock) init_zero_block();
         vdie_if(fstat(read_fd, &st) < 0, "fstat failed", 0);
         vdie_if(st.st_size != g_filesize, "input filesize does not match backup filesize (%lu != %lu)", st.st_size, g_filesize);
         compress_fd(read_fd);
