@@ -151,7 +151,7 @@ static char *g_chunk_dir = NULL;   /* directory with dedup tables */
 static int g_write_fd;      /* File descriptor to output to */
 
 static volatile uint64_t g_in_bytes = 0;        /* Bytes read */
-static volatile uint64_t g_in_blocks = 0;       /* Blocks read */
+static volatile uint64_t g_blocks_processed = 0;       /* Blocks processed */
 static volatile uint64_t g_out_bytes = 0;   /* Bytes written */
 
 static int g_opt_verbose    = 0;        /* Verbose flag is set */
@@ -1037,15 +1037,15 @@ compress_fd(int fd)
         }
         bufp->length.val = bytes;
         bufp->seq = sequence;
-        g_in_blocks++;
+        g_blocks_processed++;
 
         if (g_opt_verbose) {
-			if (g_opt_update) {
-				BACKY_LOG("progress: %lu blocks processed.\n", g_in_blocks);
-			} else {
-				BACKY_LOG("progress: %lu bytes processed.\n", g_in_bytes);
-			}
-		}
+            if (g_opt_update) {
+                BACKY_LOG("progress: %lu blocks processed.\n", g_blocks_processed);
+            } else {
+                BACKY_LOG("progress: %lu bytes processed.\n", g_in_bytes);
+            }
+        }
 
         /* Post the buffer to be compressed */
         put_last(&in_q_dirty, bufp);
@@ -1185,9 +1185,14 @@ write_decompressed(void *arg)
         }
         g_out_bytes += length;
         crc32c = crc32c_hardware(crc32c,(const u_int8_t *) buf, length);
+        g_blocks_processed++;
 
         if (g_opt_verbose) {
-            BACKY_LOG("progress: %lu bytes processed.\n", g_out_bytes);
+            if (g_opt_no_create) {
+                BACKY_LOG("progress: %lu blocks processed.\n", g_blocks_processed);
+            } else {
+                BACKY_LOG("progress: %lu bytes processed.\n", g_out_bytes);
+            }
         }
 
         if (!is_zero_chunk) {
