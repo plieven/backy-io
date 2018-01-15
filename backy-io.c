@@ -1173,7 +1173,7 @@ write_decompressed(void *arg)
                 mmh3(bufp->buf, length, 0, &hash[0]);
                 dedup_hash_sprint(&hash[0], hash_c);
                 dedup_hash_sprint(buf_hash, hash_e);
-                vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s\n", sequence, hash_c, hash_e);
+                vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s", sequence, hash_c, hash_e);
                 if (g_opt_verbose > 1) {
                     BACKY_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
                 }
@@ -1204,14 +1204,14 @@ write_decompressed(void *arg)
         sequence++;
     }
 
-    vdie_if_n(g_out_bytes != g_filesize, "out_bytes does not match size (%lu != %lu)\n", g_out_bytes, g_filesize);
+    vdie_if_n(g_out_bytes != g_filesize, "out_bytes does not match size (%lu != %lu)", g_out_bytes, g_filesize);
 
     if (g_opt_verify_decompressed) {
         BACKY_LOG("verify_deep: all chunks checksum passed\n");
     }
 
     if (g_crc32c_expected != 0xffffffff && !g_opt_no_create) {
-        vdie_if_n(crc32c != g_crc32c_expected,"crc32c checksum failure: expected %08x computed %08x\n", g_crc32c_expected, crc32c);
+        vdie_if_n(crc32c != g_crc32c_expected,"crc32c checksum failure: expected %08x computed %08x", g_crc32c_expected, crc32c);
         BACKY_LOG("crc32c: %08x\n", crc32c);
         BACKY_LOG("verify_crc32: checksum correct\n");
     }
@@ -1289,10 +1289,10 @@ decompress(void *arg)
             //XXX: verify if the hash is ok ?!
         } else {
             uint64_t expected_size = MIN(g_block_size, g_filesize - bufp->seq * g_block_size);
-            vdie_if_n(bufp->buf[0] != 0xf0 || bufp->length.val < 5 + 3, "lzo header error\n", 0);
+            vdie_if_n(bufp->buf[0] != 0xf0 || bufp->length.val < 5 + 3, "lzo header error", 0);
             comp_bufp->length.val = (bufp->buf[1] << 24) | (bufp->buf[2] << 16) | (bufp->buf[3] << 8) | bufp->buf[4];
-            vdie_if_n(comp_bufp->length.val < 0 || bufp->length.val - 5 > comp_bufp->length.val + comp_bufp->length.val / 64 + 16 + 3, "lzo header error\n", 0);
-            vdie_if_n(comp_bufp->length.val != expected_size, "lzo data has unexpected size (expected %lu found %lu)\n", expected_size, comp_bufp->length.val);
+            vdie_if_n(comp_bufp->length.val < 0 || bufp->length.val - 5 > comp_bufp->length.val + comp_bufp->length.val / 64 + 16 + 3, "lzo header error", 0);
+            vdie_if_n(comp_bufp->length.val != expected_size, "lzo data has unexpected size (expected %lu found %lu)", expected_size, comp_bufp->length.val);
             /* Decompress */
             ret = lzo1x_decompress(
                 (const unsigned char *) &(bufp->buf) + 5,
@@ -1348,7 +1348,7 @@ void verify_chunks() {
             dedup_exists = file_exists(chunk_file);
             g_block_is_compressed[i] = 0;
         }
-        vdie_if_n(!dedup_exists, "verify: chunk %s does not exist\n", chunk_file);
+        vdie_if_n(!dedup_exists, "verify: chunk %s does not exist", chunk_file);
     }
     BACKY_LOG("verify_simple: all chunks available\n");
 }
@@ -1562,13 +1562,13 @@ main(int argc, char **argv)
             /* Block size */
             g_block_size = atoi(optarg) * 1024;
             vdie_if_n(g_block_size > MAX_CBLK_SIZE,
-                "block size (%s KB) can not exceed %d\n",
+                "block size (%s KB) can not exceed %d",
                 optarg, MAX_CBLK_SIZE / 1024);
             vdie_if_n(g_block_size < MIN_CBLK_SIZE,
-                "block size (%s KB) can not be less than %d\n",
+                "block size (%s KB) can not be less than %d",
                 optarg, MIN_CBLK_SIZE / 1024);
             vdie_if_n(g_block_size % MIN_CBLK_SIZE,
-                "block size (%s KB) is not a multiple of %d\n",
+                "block size (%s KB) is not a multiple of %d",
                 optarg, MIN_CBLK_SIZE / 1024);
             break;
         case 'p':

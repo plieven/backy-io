@@ -200,17 +200,17 @@ again:
             json_value *val = value->u.object.values[i].value;
             if (!strcmp(name, "quobyte_file_version")) {
                 int j;
-                vgotoout_if_n(val->type != json_array, "json parser error: quobyte_file_version has unexpected type (%d)\n", val->type);
+                vgotoout_if_n(val->type != json_array, "json parser error: quobyte_file_version has unexpected type (%d)", val->type);
                 assert(val->u.array.length <= storage_files);
                 for (j = 0; j < val->u.array.length; j++) {
                     json_value *entry = val->u.array.values[j];
-                    vdie_if_n(entry->type != json_integer, "json parser error: quobyte_file_version entry unexpected type (%d)\n", entry->type);
+                    vdie_if_n(entry->type != json_integer, "json parser error: quobyte_file_version entry unexpected type (%d)", entry->type);
                     assert(entry->u.integer >= 0);
                     min_version[j] = entry->u.integer;
                 }
             } else if (!strcmp(name, "quobyte_file_id")) {
-                vgotoout_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)\n", val->type);
-                vgotoout_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file_id in metadata does not match!\n", 0);
+                vgotoout_if_n(val->type != json_string, "json parser error: quobyte_file_id has unexpected type (%d)", val->type);
+                vgotoout_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file_id in metadata does not match!", 0);
             }
         }
 
@@ -220,8 +220,8 @@ again:
     }
 
     if (obj_count > g_block_count) {
-        fprintf(log, "object count increased from %lu to %lu\n", g_block_count, obj_count);
-        vgotoout_if_n(recovery_mode, "object count is not allowed to grow in RECOVERY MODE\n", 0);
+        fprintf(log, "object count increased from %lu to %lu", g_block_count, obj_count);
+        vgotoout_if_n(recovery_mode, "object count is not allowed to grow in RECOVERY MODE", 0);
         g_block_mapping = realloc(g_block_mapping, obj_count * DEDUP_MAC_SIZE_BYTES);
         assert(g_block_mapping);
         g_zeroblock = calloc(1, obj_size);
@@ -234,8 +234,8 @@ again:
     }
 
     if (filesize > g_filesize) {
-        fprintf(log, "filesize increased from %lu to %lu\n", g_filesize, filesize);
-        vgotoout_if_n(recovery_mode, "filesize is not allowed to grow in RECOVERY MODE\n", 0);
+        fprintf(log, "filesize increased from %lu to %lu", g_filesize, filesize);
+        vgotoout_if_n(recovery_mode, "filesize is not allowed to grow in RECOVERY MODE", 0);
         g_filesize = filesize;
     }
 
