@@ -222,6 +222,12 @@ again:
     if (obj_count > g_block_count) {
         fprintf(log, "object count increased from %lu to %lu", g_block_count, obj_count);
         vgotoout_if_n(recovery_mode, "object count is not allowed to grow in RECOVERY MODE", 0);
+        if (g_filesize % obj_size) {
+            /* we have to mark the last block of the old backup as dirty as it will
+             * grow to full obj_size if the obj_size does not divide the old filesize. */
+            assert(g_block_count > 0);
+            memset(g_block_mapping + (g_block_count - 1) * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
+        }
         g_block_mapping = realloc(g_block_mapping, obj_count * DEDUP_MAC_SIZE_BYTES);
         assert(g_block_mapping);
         g_zeroblock = calloc(1, obj_size);
