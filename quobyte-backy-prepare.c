@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
     char *arg_path, *arg_new, *arg_old, *arg_sw;
     struct quobyte_fh* fh = NULL;
     json_value* value = NULL;
+    int size_changed = 0;
 
     if (argc < 4 && argc != 2) {
         fprintf(log, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
@@ -246,6 +247,7 @@ again:
              * not have full obj_size if the obj_size does not divide the new filesize. */
             memset(g_block_mapping + (g_block_count - 1) * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
         }
+        size_changed = 1;
     }
 
     bitmap_sz = (obj_count + 7) / 8;
@@ -277,7 +279,12 @@ again:
              num_changed++;
              if (!interactive_mode) fprintf(log, "X");
          } else {
-             if (recovery_mode) memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
+             if (recovery_mode) {
+                 memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
+             } else if (size_changed) {
+                 char zeromac[DEDUP_MAC_SIZE] = {0};
+                 if (!memcmp(zeromac, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) num_changed++;
+             }
              if (!interactive_mode) fprintf(log, ".");
          }
     }
