@@ -156,6 +156,18 @@ again:
     obj_count = (filesize + obj_size - 1) / obj_size;
     fprintf(log, "number of objects = %lu\n", obj_count);
 
+    if (arg_sw) {
+        const char *recovery_sw = "-r";
+        const char *verify_sw = "-v";
+        if (!strncmp(arg_sw, recovery_sw, strlen(recovery_sw))) {
+            recovery_mode = 1;
+            fprintf(log, "RECOVERY MODE selected\n");
+        } else if (!strncmp(arg_sw, verify_sw, strlen(verify_sw))) {
+            verify_mode = 1;
+            fprintf(log, "VERIFY ALL selected\n");
+        }
+    }
+
     if (arg_old) {
         int fd = open(arg_old, O_RDONLY, 0);
         if (!fd) {
@@ -173,9 +185,6 @@ again:
                ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
         fflush(log);
         close(fd);
-        assert(g_block_size == obj_size);
-        assert(g_filesize <= filesize);
-        assert(g_block_count <= obj_count);
         assert(g_version == 2);
         assert(g_metadata);
 
@@ -204,9 +213,15 @@ again:
                 vgotoout_if_n(val->u.string.length != strlen(&file_id[0]) || strncmp(&file_id[0], val->u.string.ptr, strlen(&file_id[0])), "quobyte_file_id in metadata does not match!\n", 0);
             }
         }
+
+        assert(g_block_size == obj_size);
+        assert(g_filesize <= filesize);
+        assert(g_block_count <= obj_count);
     }
+
     if (obj_count > g_block_count) {
         fprintf(log, "object count increased from %lu to %lu\n", g_block_count, obj_count);
+        vgotoout_if_n(recovery_mode, "object count is not allowed to grow in RECOVERY MODE\n", 0);
         g_block_mapping = realloc(g_block_mapping, obj_count * DEDUP_MAC_SIZE_BYTES);
         assert(g_block_mapping);
         g_zeroblock = calloc(1, obj_size);
@@ -217,10 +232,13 @@ again:
         }
         g_block_count = obj_count;
     }
+
     if (filesize > g_filesize) {
         fprintf(log, "filesize increased from %lu to %lu\n", g_filesize, filesize);
+        vgotoout_if_n(recovery_mode, "filesize is not allowed to grow in RECOVERY MODE\n", 0);
         g_filesize = filesize;
     }
+
     bitmap_sz = (obj_count + 7) / 8;
     bitmap = calloc(1, bitmap_sz);
     assert(bitmap);
@@ -242,18 +260,6 @@ again:
     fprintf(log, "cur version = ");
     dump_version(log, cur_version, storage_files);
     fprintf(log, "\n");
-
-    if (arg_sw) {
-        const char *recovery_sw = "-r";
-        const char *verify_sw = "-v";
-        if (!strncmp(arg_sw, recovery_sw, strlen(recovery_sw))) {
-            recovery_mode = 1;
-            fprintf(log, "RECOVERY MODE selected\n");
-        } else if (!strncmp(arg_sw, verify_sw, strlen(verify_sw))) {
-            verify_mode = 1;
-            fprintf(log, "VERIFY ALL selected\n");
-        }
-    }
 
     for (i = 0; i < obj_count; i++) {
          if (!interactive_mode && !(i % 64)) fprintf(log, "\n");
