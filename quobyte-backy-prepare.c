@@ -215,13 +215,11 @@ again:
         }
 
         assert(g_block_size == obj_size);
-        assert(g_filesize <= filesize);
-        assert(g_block_count <= obj_count);
     }
 
-    if (obj_count > g_block_count) {
-        fprintf(log, "object count increased from %lu to %lu", g_block_count, obj_count);
-        vgotoout_if_n(recovery_mode, "object count is not allowed to grow in RECOVERY MODE", 0);
+    if (obj_count != g_block_count) {
+        fprintf(log, "object count changed from %lu to %lu", g_block_count, obj_count);
+        vgotoout_if_n(recovery_mode, "object count is not allowed to change in RECOVERY MODE", 0);
         if (g_filesize % obj_size) {
             /* we have to mark the last block of the old backup as dirty as it will
              * grow to full obj_size if the obj_size does not divide the old filesize. */
@@ -239,10 +237,15 @@ again:
         g_block_count = obj_count;
     }
 
-    if (filesize > g_filesize) {
-        fprintf(log, "filesize increased from %lu to %lu", g_filesize, filesize);
-        vgotoout_if_n(recovery_mode, "filesize is not allowed to grow in RECOVERY MODE", 0);
+    if (filesize != g_filesize) {
+        fprintf(log, "filesize changed from %lu to %lu", g_filesize, filesize);
+        vgotoout_if_n(recovery_mode, "filesize is not allowed to change in RECOVERY MODE", 0);
         g_filesize = filesize;
+        if (g_filesize % obj_size) {
+            /* we have to mark the last block of the new backup as dirty as it will
+             * not have full obj_size if the obj_size does not divide the new filesize. */
+            memset(g_block_mapping + (g_block_count - 1) * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
+        }
     }
 
     bitmap_sz = (obj_count + 7) / 8;
