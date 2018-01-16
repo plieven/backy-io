@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
     size_t bitmap_sz, file_id_sz;
     struct stat st;
     FILE *log = stderr, *fp = NULL;
-    int recovery_mode, verify_mode, interactive_mode = 0;
+    int recovery_mode, interactive_mode = 0;
     struct timespec tstart={}, tend={};
     char *arg_path, *arg_new, *arg_old, *arg_sw;
     struct quobyte_fh* fh = NULL;
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
 again:
     ret = 1;
     num_changed = obj_size = storage_files = 0;
-    recovery_mode = verify_mode = 0;
+    recovery_mode = 0;
     arg_path = arg_new = arg_old = arg_sw = NULL;
     if (interactive_mode) {
         enum { kMaxArgs = 64 };
@@ -162,13 +162,9 @@ again:
 
     if (arg_sw) {
         const char *recovery_sw = "-r";
-        const char *verify_sw = "-v";
         if (!strncmp(arg_sw, recovery_sw, strlen(recovery_sw))) {
             recovery_mode = 1;
             fprintf(log, "RECOVERY MODE selected\n");
-        } else if (!strncmp(arg_sw, verify_sw, strlen(verify_sw))) {
-            verify_mode = 1;
-            fprintf(log, "VERIFY ALL selected\n");
         }
     }
 
@@ -293,24 +289,6 @@ again:
     }
     if (!interactive_mode) fprintf(log, "\n\n");
     fprintf(log, "number of changed objects = %d\n", num_changed);
-
-    if (verify_mode) {
-        char *buf = malloc(obj_size);
-        char h[DEDUP_MAC_SIZE_BYTES];
-        assert(buf);
-        for (i = 0; i < obj_count; i++) {
-            if (!OBJ_IS_ALLOCATED(i)) {
-                fprintf(log, "verify if object #%ld is matches csum -> ", i);
-                ret = quobyte_read(fh, buf, i * obj_size, obj_size);
-                fprintf(log, "ret %d ", ret);
-                assert(ret >= 0);
-                mmh3(buf, ret, 0, &h[0]);
-                assert(!memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES));
-                fprintf(log, "(OK)\n");
-            }
-        }
-        free(buf);
-    }
 
     fp = fopen(arg_new, "w");
     if (!fp) {
