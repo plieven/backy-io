@@ -157,13 +157,13 @@ static int parse_json(int fd)
                               (hex2dec(val->u.string.ptr[5]) << 8) +
                               (hex2dec(val->u.string.ptr[6]) << 4) +
                               (hex2dec(val->u.string.ptr[7]) << 0);
-            BACKY_LOG("g_crc32c_expected: %08x", g_crc32c_expected);
+            BACKY_LOG("g_crc32c_expected: %08x\n", g_crc32c_expected);
         } else if (val->type == json_object && !strcmp(name, "metadata")) {
             g_metadata = malloc(val->u.object.sz + 1);
             die_if(!g_metadata, ESTR_MALLOC);
             g_metadata[val->u.object.sz] = 0;
             g_metadata = memcpy(g_metadata, val->u.object.ptr, val->u.object.sz);
-            BACKY_LOG("metadata: %s", g_metadata);
+            BACKY_LOG("metadata: %s\n", g_metadata);
         } else if (val->type == json_object && !strcmp(name, "mapping")) {
             g_block_count = val->u.object.length;
             die_if(g_block_mapping, ESTR_MALLOC);
@@ -197,7 +197,7 @@ static int parse_json(int fd)
 
     vgotoout_if_n(g_block_count != (g_filesize + g_block_size - 1) / (g_block_size), "invalid number of chunks: expected %lu found %lu", (g_filesize + g_block_size - 1) / (g_block_size), g_block_count);
 
-    BACKY_LOG("blockcount: %lu", g_block_count);
+    BACKY_LOG("blockcount: %lu\n", g_block_count);
 
     ret = 0;
 out:
