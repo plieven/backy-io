@@ -78,7 +78,10 @@ again:
         int myargc = 0;
         char *myargv[kMaxArgs];
         input = readline("quobyte-backy-prepare> ");
-        if (!input) goto out;
+        if (!input || !strcmp("quit", input)) {
+            ret = -1;
+            goto out;
+        }
         if (!strcmp("", input)) {
             ret = 0;
             goto out;
