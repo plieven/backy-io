@@ -27,6 +27,9 @@ $(PROG) : $(MAIN_OBJ) $(EXT_OBJ)
 quobyte-backy-prepare : quobyte-backy-prepare.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-prepare.o $(LDFLAGS) -lquobyte -lreadline
 
+quobyte-backy-scrub : quobyte-backy-scrub.o $(EXT_OBJ)
+	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-scrub.o $(LDFLAGS) -lquobyte -lreadline
+
 debug : debug.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) debug.o $(LDFLAGS)
 
