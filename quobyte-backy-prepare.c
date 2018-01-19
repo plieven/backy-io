@@ -54,11 +54,6 @@ int main(int argc, char** argv) {
 
     pthread_mutex_init(&log_mutex, NULL);
 
-    if (g_arg0 = strrchr(argv[0], '/'))
-        g_arg0++;
-    else
-        g_arg0 = argv[0];
-
     fprintf(log, "connecting to quobyte registry %s...\n", argv[1]);
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     quobyte_create_adapter(argv[1]);

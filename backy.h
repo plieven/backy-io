@@ -22,7 +22,6 @@ static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
 #define MIN_CBLK_SIZE       (64*1024)     /* 256KByte */
 #define MAX_CBLK_SIZE       (16*1024*1024) /* 16MiB */
 
-static char *g_arg0;        /* Program name */
 static void *g_zeroblock = NULL;
 static unsigned int g_block_size = CBLK_SIZE;
 static unsigned int g_version = 1;

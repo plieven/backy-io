@@ -1302,8 +1302,8 @@ decompress(void *arg)
                 NULL);
             if (ret != LZO_E_OK) {
                 BACKY_LOG(
-                    "%s: lzo1x_decompress failed, "
-                "return     = %d\n", g_arg0, ret);
+                    "lzo1x_decompress failed, "
+                "return     = %d\n", ret);
                 exit(1);
             }
             /*
@@ -1496,15 +1496,6 @@ main(int argc, char **argv)
     assert(lzo_init() == LZO_E_OK);
     pthread_mutex_init(&log_mutex, NULL);
 
-    if (g_arg0 = strrchr(argv[0], '/'))
-        g_arg0++;
-    else
-        g_arg0 = argv[0];
-    /* Compress or decompress? */
-
-    if (strncmp(g_arg0, "un", 2) == 0)
-        g_opt_decompress = 1;
-
     read_fd = 0;        /* stdin */
     g_write_fd = 1;     /* stdout */
 
@@ -1618,7 +1609,7 @@ main(int argc, char **argv)
             " -p <num> maximum number of threads\n"
             " -b <num> blocksize in KB (64 kByte to 16 MiB in 64 KiB steps)\n"
             " -X <dir> directory where the chunks are (defauls to chunks/ relative to json-file)\n",
-            g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0, g_arg0);
+            argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
         exit(2);
     }
 
