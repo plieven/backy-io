@@ -165,7 +165,7 @@ again:
 
     if (arg_old) {
         int fd = open(arg_old, O_RDONLY, 0);
-        if (!fd) {
+        if (fd < 0) {
            fprintf(log, "fopen %s failed: %s\n", arg_old, strerror(errno));
            goto out;
         }
