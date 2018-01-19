@@ -30,6 +30,9 @@ int main(int argc, char** argv) {
 
 	qb_create_adapter(log, argv[1]);
 	if (qb_open_file(log, &qb, argv[2])) {
+		if (errno = ENOENT) {
+			ret = 4;
+		}
 		goto out;
 	}
 
