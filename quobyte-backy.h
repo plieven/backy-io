@@ -92,7 +92,7 @@ static int qb_open_file(FILE *log, struct qb_connection *qb, char *path) {
 	assert(qb->cur_version);
 	qb->bitmap_sz = (qb->obj_count + 7) / 8;
 	qb->bitmap = calloc(1, qb->bitmap_sz);
-    assert(qb->bitmap);
+	assert(qb->bitmap);
 	return 0;
 }
 

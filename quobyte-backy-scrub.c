@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
 	if (qb_open_file(log, &qb, argv[2])) {
 		goto out;
 	}
-    
+
 	if (qb_parse_json(log, &qb, argv[3])) {
 		goto out;
 	};
@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
 		if (OBJ_IS_ALLOCATED(qb.bitmap, i)) changed_api++;
 	}
 
-	fprintf(log, "OK: all objects passed scrubbing test. changed_api: %lu changed_csum: %lu\n", changed_api, changed_csum);
+	fprintf(log, "SUCCESS: all objects passed scrubbing test. changed_api: %lu changed_csum: %lu\n", changed_api, changed_csum);
 
 	ret = 0;
 out:
