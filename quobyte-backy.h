@@ -61,6 +61,8 @@ static int qb_open_file(FILE *log, struct qb_connection *qb, char *path) {
 		fprintf(log, "file %s could not retrieve quobyte.file_id: %s (%d)\n", path, strerror(errno), errno);
 		return 1;
 	}
+	qb->path = strdup(path);
+	assert(qb->path);
 	qb->file_id[file_id_sz] = 0;
 	clock_gettime(CLOCK_MONOTONIC, &tend);
 	fprintf(log, "quobyte_getxattr took about %.5f seconds\n",
@@ -193,5 +195,6 @@ static int qb_close_file(FILE *log, struct qb_connection *qb) {
 	free(qb->min_version);
 	free(qb->cur_version);
 	free(qb->bitmap);
+	free(qb->path);
 	return ret;
 }
