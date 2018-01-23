@@ -13,7 +13,7 @@
 #include "backy.h"
 #include "quobyte-backy.h"
 
-#define MAX_CONNECTIONS 1
+#define MAX_CONNECTIONS 16
 
 int main(int argc, char** argv) {
     long i;
