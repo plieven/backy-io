@@ -38,10 +38,40 @@ static int qb_create_adapter(FILE *log, char *registry) {
 	return ret;
 }
 
+static int qb_refresh_file(FILE *log, struct qb_connection *qb) {
+	struct timespec tstart={}, tend={};
+	struct stat st;
+	assert(qb->fh);
+	clock_gettime(CLOCK_MONOTONIC, &tstart);
+	assert(!quobyte_fstat(qb->fh, &st));
+	clock_gettime(CLOCK_MONOTONIC, &tend);
+	fprintf(log, "quobyte_fstat took about %.5f seconds\n",
+	   ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+	   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+	fflush(log);
+	qb->filesize = st.st_size;
+	fprintf(log, "filesize is %lu bytes\n", qb->filesize);
+	qb->storage_files = quobyte_get_number_of_storage_files(qb->fh);
+	assert(qb->storage_files > 0);
+	fprintf(log, "number of storage files is %d\n", qb->storage_files);
+	qb->obj_count = (qb->filesize + qb->obj_size - 1) / qb->obj_size;
+	fprintf(log, "number of objects = %lu\n", qb->obj_count);
+	free(qb->min_version);
+	qb->min_version = calloc(qb->storage_files, sizeof(uint64_t));
+	assert(qb->min_version);
+	free(qb->cur_version);
+	qb->cur_version = calloc(qb->storage_files, sizeof(uint64_t));
+	assert(qb->cur_version);
+	qb->bitmap_sz = (qb->obj_count + 7) / 8;
+	free(qb->bitmap);
+	qb->bitmap = calloc(1, qb->bitmap_sz);
+	assert(qb->bitmap);
+	return 0;
+}
+
 static int qb_open_file(FILE *log, struct qb_connection *qb, char *path) {
 	struct timespec tstart={}, tend={};
 	size_t file_id_sz;
-	struct stat st;
 	assert (!qb->fh);
 	memset(qb, 0x00, sizeof(struct qb_connection));
 	clock_gettime(CLOCK_MONOTONIC, &tstart);
@@ -61,41 +91,19 @@ static int qb_open_file(FILE *log, struct qb_connection *qb, char *path) {
 		fprintf(log, "file %s could not retrieve quobyte.file_id: %s (%d)\n", path, strerror(errno), errno);
 		return 1;
 	}
-	qb->path = strdup(path);
-	assert(qb->path);
-	qb->file_id[file_id_sz] = 0;
 	clock_gettime(CLOCK_MONOTONIC, &tend);
 	fprintf(log, "quobyte_getxattr took about %.5f seconds\n",
 	   ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
 	   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 	fprintf(log, "quobyte.file_id is %s\n", &qb->file_id[0]);
 	fflush(log);
-
-	clock_gettime(CLOCK_MONOTONIC, &tstart);
-	assert(!quobyte_fstat(qb->fh, &st));
-	clock_gettime(CLOCK_MONOTONIC, &tend);
-	fprintf(log, "quobyte_fstat took about %.5f seconds\n",
-	   ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
-	   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
-	fflush(log);
-	qb->filesize = st.st_size;
-	fprintf(log, "filesize is %lu bytes\n", qb->filesize);
+	qb->path = strdup(path);
+	assert(qb->path);
+	qb->file_id[file_id_sz] = 0;
 	qb->obj_size = quobyte_get_object_size(qb->fh);
 	assert(qb->obj_size > 0);
 	fprintf(log, "objectsize is %u bytes\n", qb->obj_size);
-	qb->storage_files = quobyte_get_number_of_storage_files(qb->fh);
-	assert(qb->storage_files > 0);
-	fprintf(log, "number of storage files is %d\n", qb->storage_files);
-	qb->obj_count = (qb->filesize + qb->obj_size - 1) / qb->obj_size;
-	fprintf(log, "number of objects = %lu\n", qb->obj_count);
-	qb->min_version = calloc(qb->storage_files, sizeof(uint64_t));
-	assert(qb->min_version);
-	qb->cur_version = calloc(qb->storage_files, sizeof(uint64_t));
-	assert(qb->cur_version);
-	qb->bitmap_sz = (qb->obj_count + 7) / 8;
-	qb->bitmap = calloc(1, qb->bitmap_sz);
-	assert(qb->bitmap);
-	return 0;
+	return qb_refresh_file(log, qb);
 }
 
 static int qb_parse_json(FILE *log, struct qb_connection *qb, char *path) {
