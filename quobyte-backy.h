@@ -195,7 +195,7 @@ static int qb_close_file(FILE *log, struct qb_connection *qb) {
 	clock_gettime(CLOCK_MONOTONIC, &tstart);
 	ret = quobyte_close(qb->fh);
 	clock_gettime(CLOCK_MONOTONIC, &tend);
-	fprintf(log, "quobyte_close took about %.5f seconds\n",
+	fprintf(log, "quobyte_close of %s took about %.5f seconds\n", qb->path,
 	   ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
 	   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 	fflush(log);
