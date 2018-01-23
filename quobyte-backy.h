@@ -51,7 +51,7 @@ static int qb_open_file(FILE *log, struct qb_connection *qb, char *path) {
 		return 1;
 	}
 	clock_gettime(CLOCK_MONOTONIC, &tend);
-	fprintf(log, "quobyte_open took about %.5f seconds\n",
+	fprintf(log, "quobyte_open of %s took about %.5f seconds\n", path,
 	   ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
 	   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 	fflush(log);
