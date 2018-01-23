@@ -23,9 +23,9 @@ int main(int argc, char** argv) {
     FILE *log = stderr, *fp = NULL;
     int recovery_mode, interactive_mode = 0;
     char *arg_path, *arg_new, *arg_old, *arg_sw;
-    int size_changed = 0;
+    int size_changed = 0, num_connections = 0;
     struct qb_connection qbconns[MAX_CONNECTIONS] = {0};
-    struct qb_connection *qb = &qbconns[0];
+    struct qb_connection *qb;
 
     if (argc < 4 && argc != 2) {
         fprintf(log, "Usage: %s <registry> <path> <backy-json> [<backy-json-src> [-r|-v]]\n", argv[0]);
@@ -89,8 +89,22 @@ again:
         if (argc > 5) arg_sw = argv[5];
     }
 
-    if (qb_open_file(log, qb, arg_path)) {
-        goto out;
+    qb = NULL;
+    for (i = 0; i < num_connections; i++) {
+         if (!strcmp(qbconns[i].path, arg_path)) {
+             qb = &qbconns[i];
+             fprintf(log, "using cached connection to %s!\n", qb->path);
+             qb_refresh_file(log, qb);
+             break;
+         }
+    }
+    if (!qb) {
+        assert(num_connections < MAX_CONNECTIONS);
+        if (qb_open_file(log, &qbconns[num_connections], arg_path)) {
+            goto out;
+        }
+        qb = &qbconns[num_connections];
+        num_connections++;
     }
 
     if (arg_sw) {
@@ -195,12 +209,15 @@ out:
         fclose(fp);
         fp = NULL;
     }
-    qb_close_file(log, qb);
     if (interactive_mode) {
         fprintf(log, "quobyte-backy-prepare: ret = %d\n", ret >= 0 ? ret : 0);
         fflush(log);
         if (ret >= 0) goto again;
     }
+    for (i = 0; i < num_connections; i++) {
+        qb_close_file(log, &qbconns[i]);
+    }
+    num_connections = 0;
     quobyte_destroy_adapter();
     fclose(log);
     exit(ret > 0 ? : 0);
