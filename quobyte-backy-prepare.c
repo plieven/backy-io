@@ -209,13 +209,15 @@ out:
         fclose(fp);
         fp = NULL;
     }
+    if (ret < 0) {
+        for (i = 0; i < num_connections; i++) {
+            qb_close_file(log, &qbconns[i]);
+        }
+    }
     if (interactive_mode) {
         fprintf(log, "quobyte-backy-prepare: ret = %d\n", ret >= 0 ? ret : 0);
         fflush(log);
         if (ret >= 0) goto again;
-    }
-    for (i = 0; i < num_connections; i++) {
-        qb_close_file(log, &qbconns[i]);
     }
     num_connections = 0;
     quobyte_destroy_adapter();
