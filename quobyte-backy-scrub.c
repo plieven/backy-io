@@ -7,8 +7,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <quobyte.h>
-#include <readline/readline.h>
-#include <readline/history.h>
 
 #include "backy.h"
 #include "quobyte-backy.h"
