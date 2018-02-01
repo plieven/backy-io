@@ -222,5 +222,5 @@ out:
     num_connections = 0;
     quobyte_destroy_adapter();
     fclose(log);
-    exit(ret > 0 ? : 0);
+    exit(ret);
 }
