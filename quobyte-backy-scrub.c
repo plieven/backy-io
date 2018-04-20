@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
 
 	qb_create_adapter(log, argv[1]);
 	if (qb_open_file(log, &qb, argv[2])) {
-		if (errno = ENOENT) {
+		if (errno == ENOENT) {
 			ret = 4;
 		}
 		goto out;
@@ -98,5 +98,5 @@ out:
 	qb_close_file(log, &qb);
 	quobyte_destroy_adapter();
 	fclose(log);
-	exit(ret > 0 ? : 0);
+	exit(ret);
 }
