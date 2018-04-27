@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
     int recovery_mode, interactive_mode = 0;
     char *arg_path, *arg_new, *arg_old, *arg_sw;
     int size_changed = 0, num_connections = 0;
+    struct timespec tstart={}, tend={};
     struct qb_connection qbconns[MAX_CONNECTIONS] = {0};
     struct qb_connection *qb;
 
@@ -174,6 +175,7 @@ again:
     if (!interactive_mode && qb->obj_count <= 1024) fprintf(log, "\n\n");
     fprintf(log, "number of changed objects = %d\n", num_changed);
 
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     fp = fopen(arg_new, "w");
     if (!fp) {
         fprintf(log, "fopen failed: %s\n", arg_new);
@@ -185,9 +187,13 @@ again:
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %u,\n", qb->obj_size);
     fprintf(fp, " \"mapping\" : {");
-    for (i = 0; i < qb->obj_count; i++) {
+    if (qb->obj_count > 0) {
+         dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
+         fprintf(fp, "\n  \"0\" : \"%s\"", dedup_hash);
+    }
+    for (i = 1; i < qb->obj_count; i++) {
          dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-         fprintf(fp, "%s\n  \"%lu\" : \"%s\"", i ? "," : "", i, dedup_hash);
+         fprintf(fp, ",\n  \"%lu\" : \"%s\"", i, dedup_hash);
     }
     fprintf(fp, "\n },\n");
     if (!recovery_mode) {
@@ -199,6 +205,10 @@ again:
     }
     fprintf(fp, " \"size\" : %lu\n", qb->filesize);
     fprintf(fp, "}\n");
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(log, "writing of backup job json took about %.5f seconds\n",
+            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 
     fprintf(log, "\nDONE backy backup job json written to: %s\n", arg_new);
     ret = 0;
