@@ -156,11 +156,11 @@ again:
     qb_get_changed_objects(log, qb);
 
     for (i = 0; i < qb->obj_count; i++) {
-         if (!interactive_mode && !(i % 64)) fprintf(log, "\n");
+         if (!interactive_mode && !(i % 64) && qb->obj_count <= 1024) fprintf(log, "\n");
          if (OBJ_IS_ALLOCATED(qb->bitmap, i)) {
              if (!recovery_mode) memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
              num_changed++;
-             if (!interactive_mode) fprintf(log, "X");
+             if (!interactive_mode && qb->obj_count <= 1024) fprintf(log, "X");
          } else {
              if (recovery_mode) {
                  memset(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
@@ -168,10 +168,10 @@ again:
                  char zeromac[DEDUP_MAC_SIZE] = {0};
                  if (!memcmp(zeromac, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) num_changed++;
              }
-             if (!interactive_mode) fprintf(log, ".");
+             if (!interactive_mode && qb->obj_count <= 1024) fprintf(log, ".");
          }
     }
-    if (!interactive_mode) fprintf(log, "\n\n");
+    if (!interactive_mode && qb->obj_count <= 1024) fprintf(log, "\n\n");
     fprintf(log, "number of changed objects = %d\n", num_changed);
 
     fp = fopen(arg_new, "w");
