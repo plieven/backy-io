@@ -11,12 +11,54 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
-static int dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
+#if DEDUP_MAC_SIZE_BYTES == 16
+static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
+    const char *hex = "0123456789abcdef";
+    s[0] = hex[(hash[0] >> 4) & 0xf];
+    s[1] = hex[hash[0] & 0xf];
+    s[2] = hex[(hash[1] >> 4) & 0xf];
+    s[3] = hex[hash[1] & 0xf];
+    s[4] = hex[(hash[2] >> 4) & 0xf];
+    s[5] = hex[hash[2] & 0xf];
+    s[6] = hex[(hash[3] >> 4) & 0xf];
+    s[7] = hex[hash[3] & 0xf];
+    s[8] = hex[(hash[4] >> 4) & 0xf];
+    s[9] = hex[hash[4] & 0xf];
+    s[10] = hex[(hash[5] >> 4) & 0xf];
+    s[11] = hex[hash[5] & 0xf];
+    s[12] = hex[(hash[6] >> 4) & 0xf];
+    s[13] = hex[hash[6] & 0xf];
+    s[14] = hex[(hash[7] >> 4) & 0xf];
+    s[15] = hex[hash[7] & 0xf];
+    s[16] = hex[(hash[8] >> 4) & 0xf];
+    s[17] = hex[hash[8] & 0xf];
+    s[18] = hex[(hash[9] >> 4) & 0xf];
+    s[19] = hex[hash[9] & 0xf];
+    s[20] = hex[(hash[10] >> 4) & 0xf];
+    s[21] = hex[hash[10] & 0xf];
+    s[22] = hex[(hash[11] >> 4) & 0xf];
+    s[23] = hex[hash[11] & 0xf];
+    s[24] = hex[(hash[12] >> 4) & 0xf];
+    s[25] = hex[hash[12] & 0xf];
+    s[26] = hex[(hash[13] >> 4) & 0xf];
+    s[27] = hex[hash[13] & 0xf];
+    s[28] = hex[(hash[14] >> 4) & 0xf];
+    s[29] = hex[hash[14] & 0xf];
+    s[30] = hex[(hash[15] >> 4) & 0xf];
+    s[31] = hex[hash[15] & 0xf];
+    s[32] = 0;
+}
+#else
+static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     int i;
-    for (i=0; i < DEDUP_MAC_SIZE_BYTES; i++) {
-        sprintf(s + i * 2, "%02x", hash[i]);
+    const char *hex = "0123456789abcdef";
+    for (i = 0; i < DEDUP_MAC_SIZE_BYTES; i++, s+=2, hash++)
+    {
+        s[0] = hex[(hash[0] >> 4) & 0xf];
+        s[1] = hex[hash[0] & 0xf];
     }
 }
+#endif
 
 #define CBLK_SIZE           (4*1024*1024)  /* Default block size - 4096KB */
 #define MIN_CBLK_SIZE       (64*1024)     /* 256KByte */
