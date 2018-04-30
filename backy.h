@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include "json-parser/json.h"
 
 #include "smhasher/src/MurmurHash3.h"
@@ -234,11 +235,11 @@ static int parse_json(int fd)
 
     BACKY_LOG("version: %d\n", g_version);
     BACKY_LOG("blocksize: %u\n", g_block_size);
-    BACKY_LOG("size: %lu\n", g_filesize);
+    BACKY_LOG("size: %" PRIu64 "\n", g_filesize);
 
     vgotoout_if_n(g_block_count != (g_filesize + g_block_size - 1) / (g_block_size), "invalid number of chunks: expected %lu found %lu", (g_filesize + g_block_size - 1) / (g_block_size), g_block_count);
 
-    BACKY_LOG("blockcount: %lu\n", g_block_count);
+    BACKY_LOG("blockcount: %" PRIu64 "\n", g_block_count);
 
     ret = 0;
 out:
