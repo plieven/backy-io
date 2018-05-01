@@ -33,6 +33,9 @@ quobyte-backy-scrub : quobyte-backy-scrub.o $(EXT_OBJ)
 quobyte-getfattr : quobyte-getfattr.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) quobyte-getfattr.o $(LDFLAGS) -lquobyte
 
+json-test : json-test.o $(EXT_OBJ)
+	$(CC) -o $@ $(EXT_OBJ) json-test.o $(LDFLAGS)
+
 debug : debug.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) debug.o $(LDFLAGS)
 
