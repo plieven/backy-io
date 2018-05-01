@@ -159,6 +159,7 @@ static int parse_json(int fd)
     int i,j,k, ret = 1;
     size_t sz, count;
     json_value* value;
+    struct timespec tstart={}, tend={};
 
     input = fdopen(fd, "r");
     die_if(! input, ESTR_FDOPEN);
@@ -175,7 +176,15 @@ static int parse_json(int fd)
 
     fclose(input);
 
-    value = json_parse((json_char*) buf, sz);
+    json_settings settings = { .settings = json_fast_string_parse };
+
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
+    value = json_parse_ex(&settings, (json_char*) buf, sz, 0);
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+
+    fprintf(stderr, "parse_json (core) took about %.5f seconds\n",
+            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 
     vgotoout_if_n(!value || value->type != json_object, "json parse error", 0);
 
