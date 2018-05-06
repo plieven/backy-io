@@ -34,9 +34,13 @@ int main(int argc, char** argv) {
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %u,\n", 1 << 20);
     fprintf(fp, " \"mapping\" : {");
-    for (i = 0; i < objcount; i++) {
+    if (objcount > 0) {
+         dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
+         fprintf(fp, "\"0\":\"%s\"", dedup_hash);
+    }
+    for (i = 1; i < objcount; i++) {
          dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-         fprintf(fp, "%s\"%lu\":\"%s\"", i ? "," : "", i, dedup_hash);
+         fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
     }
     fprintf(fp, "},\n");
     fprintf(fp, " \"size\" : %" PRIu64 "\n", objcount * 1048576);
