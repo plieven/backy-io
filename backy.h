@@ -223,7 +223,7 @@ static int parse_json(int fd)
             die_if(!g_block_is_compressed, ESTR_MALLOC);
             for (j = 0; j < g_block_count; j++) {
                 json_value *entry = val->u.object.values[j].value;
-                unsigned long seq = strtol(val->u.object.values[j].name, NULL, 0);
+                unsigned long seq = strtoul(val->u.object.values[j].name, NULL, 0);
                 vgotoout_if_n(j != seq, "json parser error: invalid sequence in mapping: expected %lu found %lu", j, seq);
                 vgotoout_if_n(entry->type != json_string, "json parser error: invalid json_type for mapping entry %lu", j);
                 vgotoout_if_n(entry->u.string.length != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d", DEDUP_MAC_SIZE / 4, entry->u.string.length);
