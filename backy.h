@@ -47,7 +47,6 @@ static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     s[29] = hex[hash[14] & 0xf];
     s[30] = hex[(hash[15] >> 4) & 0xf];
     s[31] = hex[hash[15] & 0xf];
-    s[32] = 0;
 }
 #else
 static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {

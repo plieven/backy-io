@@ -11,7 +11,7 @@
 #include "backy.h"
 
 int main(int argc, char** argv) {
-    char dedup_hash[DEDUP_MAC_SIZE_STR];
+    char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
     FILE *log = stderr, *fp = NULL;
     const char *testfile = "/tmp/test.json";
     long i;

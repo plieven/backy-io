@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     long i;
     int ret, num_changed;
     char *input = NULL;
-    char dedup_hash[DEDUP_MAC_SIZE_STR];
+    char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
     FILE *log = stderr, *fp = NULL;
     int recovery_mode, interactive_mode = 0;
     char *arg_path, *arg_new, *arg_old, *arg_sw;

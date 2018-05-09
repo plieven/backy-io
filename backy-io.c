@@ -665,7 +665,7 @@ wakeup(vol_buf_q *bufq)
 }
 
 void init_zero_block() {
-    uint8_t h[DEDUP_MAC_SIZE_STR];
+    uint8_t h[DEDUP_MAC_SIZE_STR] = {};
     if (g_zeroblock) return;
     g_zeroblock = valloc(g_block_size);
     die_if(!g_zeroblock, ESTR_MALLOC);
@@ -693,7 +693,7 @@ write_compressed(void *arg)
     int dedup_existing=0;
     int zeroblocks=0;
     FILE *fp = stdout;
-    uint8_t dedup_hash[DEDUP_MAC_SIZE_STR];
+    uint8_t dedup_hash[DEDUP_MAC_SIZE_STR] = {};
 
     g_out_bytes = 0;
 
@@ -1168,8 +1168,8 @@ write_decompressed(void *arg)
 
             if (g_opt_verify_decompressed) {
                 char hash[DEDUP_MAC_SIZE_BYTES];
-                char hash_c[DEDUP_MAC_SIZE/4+1];
-                char hash_e[DEDUP_MAC_SIZE/4+1];
+                char hash_c[DEDUP_MAC_SIZE_STR] = {};
+                char hash_e[DEDUP_MAC_SIZE_STR] = {};
                 mmh3(bufp->buf, length, 0, &hash[0]);
                 dedup_hash_sprint(&hash[0], hash_c);
                 dedup_hash_sprint(buf_hash, hash_e);
