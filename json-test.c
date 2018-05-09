@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
     FILE *log = stderr, *fp = NULL;
     const char *testfile = "/tmp/test.json";
     long i;
-    uint64_t objcount = 1 << 19;
+    uint64_t objcount = 1 << 22;
     struct timespec tstart={}, tend={};
     int ret = 0;
 
