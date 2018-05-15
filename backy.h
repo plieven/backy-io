@@ -141,7 +141,7 @@ static int parse_json(int fd)
 {
     FILE *input;
     char *buf;
-    int i,j,k, ret = 1;
+    int i, j, ret = 1;
     size_t sz, count;
     json_value* value;
     struct timespec tstart={}, tend={};
@@ -213,10 +213,38 @@ static int parse_json(int fd)
                 vgotoout_if_n(j != seq, "json parser error: invalid sequence in mapping: expected %lu found %lu", j, seq);
                 vgotoout_if_n(entry->type != json_string, "json parser error: invalid json_type for mapping entry %lu", j);
                 vgotoout_if_n(entry->u.string.length != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d", DEDUP_MAC_SIZE / 4, entry->u.string.length);
-                for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
-                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (h2d[entry->u.string.ptr[k * 2]] << 4) +
-                                                                       h2d[entry->u.string.ptr[k * 2 + 1]];
-                }
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 0] = (h2d[entry->u.string.ptr[0 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[0 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 1] = (h2d[entry->u.string.ptr[1 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[1 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 2] = (h2d[entry->u.string.ptr[2 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[2 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 3] = (h2d[entry->u.string.ptr[3 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[3 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 4] = (h2d[entry->u.string.ptr[4 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[4 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 5] = (h2d[entry->u.string.ptr[5 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[5 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 6] = (h2d[entry->u.string.ptr[6 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[6 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 7] = (h2d[entry->u.string.ptr[7 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[7 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 8] = (h2d[entry->u.string.ptr[8 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[8 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 9] = (h2d[entry->u.string.ptr[9 * 2]] << 4) +
+                                                                   h2d[entry->u.string.ptr[9 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 10] = (h2d[entry->u.string.ptr[10 * 2]] << 4) +
+                                                                    h2d[entry->u.string.ptr[10 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 11] = (h2d[entry->u.string.ptr[11 * 2]] << 4) +
+                                                                    h2d[entry->u.string.ptr[11 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 12] = (h2d[entry->u.string.ptr[12 * 2]] << 4) +
+                                                                    h2d[entry->u.string.ptr[12 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 13] = (h2d[entry->u.string.ptr[13 * 2]] << 4) +
+                                                                    h2d[entry->u.string.ptr[13 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 14] = (h2d[entry->u.string.ptr[14 * 2]] << 4) +
+                                                                    h2d[entry->u.string.ptr[14 * 2 + 1]];
+                g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 15] = (h2d[entry->u.string.ptr[15 * 2]] << 4) +
+                                                                    h2d[entry->u.string.ptr[15 * 2 + 1]];
             }
         } else {
             vgotoout_if_n(1, "json parser error: unexpected token '%s' (type %d)", name, val->type);
