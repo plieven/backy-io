@@ -14,48 +14,48 @@
 
 #if DEDUP_MAC_SIZE_BYTES == 16
 static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
-    const char *hex = "0123456789abcdef";
-    s[0] = hex[(hash[0] >> 4) & 0xf];
-    s[1] = hex[hash[0] & 0xf];
-    s[2] = hex[(hash[1] >> 4) & 0xf];
-    s[3] = hex[hash[1] & 0xf];
-    s[4] = hex[(hash[2] >> 4) & 0xf];
-    s[5] = hex[hash[2] & 0xf];
-    s[6] = hex[(hash[3] >> 4) & 0xf];
-    s[7] = hex[hash[3] & 0xf];
-    s[8] = hex[(hash[4] >> 4) & 0xf];
-    s[9] = hex[hash[4] & 0xf];
-    s[10] = hex[(hash[5] >> 4) & 0xf];
-    s[11] = hex[hash[5] & 0xf];
-    s[12] = hex[(hash[6] >> 4) & 0xf];
-    s[13] = hex[hash[6] & 0xf];
-    s[14] = hex[(hash[7] >> 4) & 0xf];
-    s[15] = hex[hash[7] & 0xf];
-    s[16] = hex[(hash[8] >> 4) & 0xf];
-    s[17] = hex[hash[8] & 0xf];
-    s[18] = hex[(hash[9] >> 4) & 0xf];
-    s[19] = hex[hash[9] & 0xf];
-    s[20] = hex[(hash[10] >> 4) & 0xf];
-    s[21] = hex[hash[10] & 0xf];
-    s[22] = hex[(hash[11] >> 4) & 0xf];
-    s[23] = hex[hash[11] & 0xf];
-    s[24] = hex[(hash[12] >> 4) & 0xf];
-    s[25] = hex[hash[12] & 0xf];
-    s[26] = hex[(hash[13] >> 4) & 0xf];
-    s[27] = hex[hash[13] & 0xf];
-    s[28] = hex[(hash[14] >> 4) & 0xf];
-    s[29] = hex[hash[14] & 0xf];
-    s[30] = hex[(hash[15] >> 4) & 0xf];
-    s[31] = hex[hash[15] & 0xf];
+    static const char *d2h = "0123456789abcdef";
+    s[0] = d2h[(hash[0] >> 4) & 0xf];
+    s[1] = d2h[hash[0] & 0xf];
+    s[2] = d2h[(hash[1] >> 4) & 0xf];
+    s[3] = d2h[hash[1] & 0xf];
+    s[4] = d2h[(hash[2] >> 4) & 0xf];
+    s[5] = d2h[hash[2] & 0xf];
+    s[6] = d2h[(hash[3] >> 4) & 0xf];
+    s[7] = d2h[hash[3] & 0xf];
+    s[8] = d2h[(hash[4] >> 4) & 0xf];
+    s[9] = d2h[hash[4] & 0xf];
+    s[10] = d2h[(hash[5] >> 4) & 0xf];
+    s[11] = d2h[hash[5] & 0xf];
+    s[12] = d2h[(hash[6] >> 4) & 0xf];
+    s[13] = d2h[hash[6] & 0xf];
+    s[14] = d2h[(hash[7] >> 4) & 0xf];
+    s[15] = d2h[hash[7] & 0xf];
+    s[16] = d2h[(hash[8] >> 4) & 0xf];
+    s[17] = d2h[hash[8] & 0xf];
+    s[18] = d2h[(hash[9] >> 4) & 0xf];
+    s[19] = d2h[hash[9] & 0xf];
+    s[20] = d2h[(hash[10] >> 4) & 0xf];
+    s[21] = d2h[hash[10] & 0xf];
+    s[22] = d2h[(hash[11] >> 4) & 0xf];
+    s[23] = d2h[hash[11] & 0xf];
+    s[24] = d2h[(hash[12] >> 4) & 0xf];
+    s[25] = d2h[hash[12] & 0xf];
+    s[26] = d2h[(hash[13] >> 4) & 0xf];
+    s[27] = d2h[hash[13] & 0xf];
+    s[28] = d2h[(hash[14] >> 4) & 0xf];
+    s[29] = d2h[hash[14] & 0xf];
+    s[30] = d2h[(hash[15] >> 4) & 0xf];
+    s[31] = d2h[hash[15] & 0xf];
 }
 #else
 static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     int i;
-    const char *hex = "0123456789abcdef";
+    static const char *d2h = "0123456789abcdef";
     for (i = 0; i < DEDUP_MAC_SIZE_BYTES; i++, s+=2, hash++)
     {
-        s[0] = hex[(hash[0] >> 4) & 0xf];
-        s[1] = hex[hash[0] & 0xf];
+        s[0] = d2h[(hash[0] >> 4) & 0xf];
+        s[1] = d2h[hash[0] & 0xf];
     }
 }
 #endif
@@ -135,21 +135,7 @@ pthread_mutex_t log_mutex;
     if (cond) { \
         diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); goto out; } }
 
-
-static int hex2dec(char c)
-{
-    if (c >= '0' && c <= '9')
-        return (int) c - '0';
-    else
-    {
-        if (c >= 'A' && c <= 'F')
-            return (int) (10 + c - 'A');
-        else if (c >= 'a' && c <= 'f')
-            return (int) (10 + c - 'a');
-        else
-            return 0;
-    }
-}
+static const char h2d[256] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0,0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,11,12,13,14,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
 
 static int parse_json(int fd)
 {
@@ -199,14 +185,14 @@ static int parse_json(int fd)
         } else if (val->type == json_string && !strcmp(name, "hash")) {
             vgotoout_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'", val->u.string.length, val->u.string.ptr);
         } else if (val->type == json_string && !strcmp(name, "crc32c")) {
-            g_crc32c_expected = (hex2dec(val->u.string.ptr[0]) << 28) +
-                              (hex2dec(val->u.string.ptr[1]) << 24) +
-                              (hex2dec(val->u.string.ptr[2]) << 20) +
-                              (hex2dec(val->u.string.ptr[3]) << 16) +
-                              (hex2dec(val->u.string.ptr[4]) << 12) +
-                              (hex2dec(val->u.string.ptr[5]) << 8) +
-                              (hex2dec(val->u.string.ptr[6]) << 4) +
-                              (hex2dec(val->u.string.ptr[7]) << 0);
+            g_crc32c_expected = (h2d[val->u.string.ptr[0]] << 28) +
+                                (h2d[val->u.string.ptr[1]] << 24) +
+                                (h2d[val->u.string.ptr[2]] << 20) +
+                                (h2d[val->u.string.ptr[3]] << 16) +
+                                (h2d[val->u.string.ptr[4]] << 12) +
+                                (h2d[val->u.string.ptr[5]] << 8) +
+                                (h2d[val->u.string.ptr[6]] << 4) +
+                                (h2d[val->u.string.ptr[7]] << 0);
             BACKY_LOG("g_crc32c_expected: %08x\n", g_crc32c_expected);
         } else if (val->type == json_object && !strcmp(name, "metadata")) {
             g_metadata = malloc(val->u.object.sz + 1);
@@ -228,8 +214,8 @@ static int parse_json(int fd)
                 vgotoout_if_n(entry->type != json_string, "json parser error: invalid json_type for mapping entry %lu", j);
                 vgotoout_if_n(entry->u.string.length != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d", DEDUP_MAC_SIZE / 4, entry->u.string.length);
                 for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
-                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (hex2dec(entry->u.string.ptr[k * 2]) << 4) +
-                                                                    hex2dec(entry->u.string.ptr[k * 2 + 1]);
+                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (h2d[entry->u.string.ptr[k * 2]] << 4) +
+                                                                       h2d[entry->u.string.ptr[k * 2 + 1]];
                 }
             }
         } else {
