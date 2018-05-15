@@ -757,7 +757,7 @@ write_compressed(void *arg)
         seq++;
     }
 
-    fprintf(fp, "\n },\n");
+    fprintf(fp, "},\n");
 
     if (crc32c != 0xffffffff) {
         BACKY_LOG("crc32c: %08x\n", crc32c);

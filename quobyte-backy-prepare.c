@@ -195,7 +195,7 @@ again:
          dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
          fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
     }
-    fprintf(fp, "\n },\n");
+    fprintf(fp, "},\n");
     if (!recovery_mode) {
         fprintf(fp, " \"metadata\" : {\n");
         fprintf(fp, "  \"quobyte_file_id\": \"%s\",\n", &qb->file_id[0]);
