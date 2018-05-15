@@ -189,11 +189,11 @@ again:
     fprintf(fp, " \"mapping\" : {");
     if (qb->obj_count > 0) {
          dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
-         fprintf(fp, "\n  \"0\" : \"%s\"", dedup_hash);
+         fprintf(fp, "\"0\":\"%s\"", dedup_hash);
     }
     for (i = 1; i < qb->obj_count; i++) {
          dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-         fprintf(fp, ",\n  \"%lu\" : \"%s\"", i, dedup_hash);
+         fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
     }
     fprintf(fp, "\n },\n");
     if (!recovery_mode) {

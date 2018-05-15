@@ -714,7 +714,7 @@ write_compressed(void *arg)
             if (seq == g_block_count) break;
             if (memcmp(g_zeroblock, g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
                 dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-                fprintf(fp, "%s\n  \"%lu\" : \"%s\"", seq ? "," : "", seq, dedup_hash);
+                fprintf(fp, "%s\"%lu\":\"%s\"", seq ? "," : "", seq, dedup_hash);
                 seq++;
                 dedup_existing++;
                 continue;
@@ -743,7 +743,7 @@ write_compressed(void *arg)
             }
 
             dedup_hash_sprint(bufp->hash, &dedup_hash[0]);
-            fprintf(fp, "%s\n  \"%lu\" : \"%s\"", seq ? "," : "", seq, dedup_hash);
+            fprintf(fp, "%s\"%lu\":\"%s\"", seq ? "," : "", seq, dedup_hash);
 
             if (dedup_is_zero_chunk(&bufp->hash[0])) {
                 zeroblocks++;
