@@ -213,6 +213,7 @@ static int parse_json(int fd)
                 vgotoout_if_n(j != seq, "json parser error: invalid sequence in mapping: expected %lu found %lu", j, seq);
                 vgotoout_if_n(entry->type != json_string, "json parser error: invalid json_type for mapping entry %lu", j);
                 vgotoout_if_n(entry->u.string.length != DEDUP_MAC_SIZE / 4, "json parser error: invalid mac size in mapping: expected %d found %d", DEDUP_MAC_SIZE / 4, entry->u.string.length);
+#if DEDUP_MAC_SIZE_BYTES == 16
                 g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 0] = (h2d[entry->u.string.ptr[0 * 2]] << 4) +
                                                                    h2d[entry->u.string.ptr[0 * 2 + 1]];
                 g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 1] = (h2d[entry->u.string.ptr[1 * 2]] << 4) +
@@ -245,6 +246,13 @@ static int parse_json(int fd)
                                                                     h2d[entry->u.string.ptr[14 * 2 + 1]];
                 g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + 15] = (h2d[entry->u.string.ptr[15 * 2]] << 4) +
                                                                     h2d[entry->u.string.ptr[15 * 2 + 1]];
+#else
+                int k;
+                for (k = 0; k < DEDUP_MAC_SIZE_BYTES; k++) {
+                    g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES + k] = (h2d[entry->u.string.ptr[k * 2]] << 4) +
+                                                                       h2d[entry->u.string.ptr[k * 2 + 1]];
+                }
+#endif
             }
         } else {
             vgotoout_if_n(1, "json parser error: unexpected token '%s' (type %d)", name, val->type);
