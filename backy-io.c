@@ -16,23 +16,7 @@
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <sys/fcntl.h>
-#include <utime.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <pthread.h>
 #include "backy.h"
-
-#include <stdint.h>
-#include <malloc.h>     /* valloc() */
 
 #define MAX_OUTPUT_BUFFERS  64
 

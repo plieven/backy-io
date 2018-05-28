@@ -1,17 +1,7 @@
-#include <stdlib.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <assert.h>
-#include <stdbool.h>
-#include <errno.h>
-#include <string.h>
-#include <stdarg.h>
-#include <quobyte.h>
-#include <readline/readline.h>
-#include <readline/history.h>
-
 #include "backy.h"
 #include "quobyte-backy.h"
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #define MAX_CONNECTIONS 16
 

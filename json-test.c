@@ -1,13 +1,3 @@
-#include <stdlib.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <assert.h>
-#include <stdbool.h>
-#include <errno.h>
-#include <string.h>
-#include <stdarg.h>
-#include <time.h>
-
 #include "backy.h"
 
 int main(int argc, char** argv) {
