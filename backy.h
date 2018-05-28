@@ -13,7 +13,7 @@
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
 #if DEDUP_MAC_SIZE_BYTES == 16
-static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
+static int inline __attribute__((always_inline)) dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     static const char *d2h = "0123456789abcdef";
     s[0] = d2h[(hash[0] >> 4) & 0xf];
     s[1] = d2h[hash[0] & 0xf];
@@ -49,7 +49,7 @@ static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     s[31] = d2h[hash[15] & 0xf];
 }
 #else
-static int inline dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
+static int inline __attribute__((always_inline)) dedup_hash_sprint(u_int8_t *hash, uint8_t *s) {
     int i;
     static const char *d2h = "0123456789abcdef";
     for (i = 0; i < DEDUP_MAC_SIZE_BYTES; i++, s+=2, hash++)
