@@ -1273,7 +1273,8 @@ decompress(void *arg)
             //XXX: verify if the hash is ok ?!
         } else {
             uint64_t expected_size = MIN(g_block_size, g_filesize - bufp->seq * g_block_size);
-            vdie_if_n(bufp->buf[0] != 0xf0 || bufp->length.val < 5 + 3, "lzo header error", 0);
+            vdie_if_n(bufp->length.val < 5 + 3 || bufp->buf[0] != 0xf0, "lzo header error (length): seq %lu bufp->length.val %d", bufp->seq, bufp->length.val);
+            vdie_if_n(bufp->buf[0] != 0xf0, "lzo header error (magic): seq %lu bufp->buf[0] 0x%02x", bufp->seq, bufp->buf[0]);
             comp_bufp->length.val = (bufp->buf[1] << 24) | (bufp->buf[2] << 16) | (bufp->buf[3] << 8) | bufp->buf[4];
             vdie_if_n(comp_bufp->length.val < 0 || bufp->length.val - 5 > comp_bufp->length.val + comp_bufp->length.val / 64 + 16 + 3, "lzo header error", 0);
             vdie_if_n(comp_bufp->length.val != expected_size, "lzo data has unexpected size (expected %lu found %lu)", expected_size, comp_bufp->length.val);
