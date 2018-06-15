@@ -288,16 +288,21 @@ vol_int_set(vol_int *vi, int newval)
 
 int file_exists(u_int8_t * filename)
 {
-    int fd;
-    if (g_opt_verbose >2) BACKY_LOG("checking for '%s'... ",filename);
-    if ((fd = open(filename, O_RDONLY))>0)
-    {
-        close(fd);
-        if (g_opt_verbose >2) BACKY_LOG(" FOUND!\n");
-        return 1;
+    struct stat st;
+    int ret;
+    if (g_opt_verbose > 2) BACKY_LOG("checking for '%s'... ",filename);
+    ret = stat(filename, &st);
+    vdie_if(ret < 0 && errno != ENOENT, "stat: %s", filename);
+    if (ret < 0 && errno == ENOENT) {
+        if (g_opt_verbose > 2) BACKY_LOG(" NOT FOUND!\n");
+        return 0;
     }
-    if (g_opt_verbose >2) BACKY_LOG(" NOT FOUND!\n");
-    return 0;
+    if (st.st_size == 0) {
+        if (g_opt_verbose > 2) BACKY_LOG(" HAS ZERO SIZE (NOT FOUND!)\n");
+        return 0;
+    }
+    if (g_opt_verbose > 2) BACKY_LOG(" FOUND!\n");
+    return 1;
 }
 
 int dedup_mkdir(u_int8_t * dir) {
