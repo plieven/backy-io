@@ -148,6 +148,7 @@ static int g_opt_verify_simple = 0;     /* Verify simple is set */
 static int g_opt_verify_decompressed = 0;       /* Verify of decompressed chunks is set */
 static int g_opt_skip_zeroes = 0;       /* Skip zeroes on decompress */
 static int g_opt_no_create   = 0;       /* Do not create output file on decompress, skip 0x00 chunks */
+static int g_opt_delete_zero_byte_chunks = 0;        /* delete zero byte chunks on verify */
 
 static vol_int g_compress_threads;
 static vol_int g_comp_idle;         /* Zero IFF all (de)compress threads */
@@ -287,22 +288,24 @@ vol_int_set(vol_int *vi, int newval)
 
 /* ======================================================================== */
 
-int file_exists(u_int8_t * filename)
+int file_exists(u_int8_t * filename, int report_not_found)
 {
     struct stat st;
     int ret;
-    if (g_opt_verbose > 2) BACKY_LOG("checking for '%s'... ",filename);
     ret = stat(filename, &st);
     vdie_if(ret < 0 && errno != ENOENT, "stat: %s", filename);
     if (ret < 0 && errno == ENOENT) {
-        if (g_opt_verbose > 2) BACKY_LOG(" NOT FOUND!\n");
+        if (report_not_found) BACKY_LOG("ERR: chunk '%s' NOT FOUND!\n", filename);
         return 0;
     }
     if (st.st_size == 0) {
-        if (g_opt_verbose > 2) BACKY_LOG(" HAS ZERO SIZE (NOT FOUND!)\n");
+        BACKY_LOG("ERR: chunk '%s' HAS ZERO SIZE (NOT FOUND!)\n", filename);
+        if (g_opt_delete_zero_byte_chunks) {
+            BACKY_LOG("deleting zero byte chunk '%s'...\n", filename);
+            vdie_if(unlink(filename) < 0, "unlink: %s", filename);
+        }
         return 0;
     }
-    if (g_opt_verbose > 2) BACKY_LOG(" FOUND!\n");
     g_accumulated_chunk_size += st.st_size;
     return 1;
 }
@@ -831,11 +834,11 @@ compress(void *arg)
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
             mmh3(&(bufp->buf), bufp->length.val, 0, &bufp->hash[0]);
             dedup_hash_filename(dedup_filename, &bufp->hash[0], 1);
-            comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename);
+            comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename, 0);
             comp_bufp->is_compressed = 1;
             if (!bufp->dedup_exists && g_version > 1) {
                 dedup_hash_filename(dedup_filename, &bufp->hash[0], 0);
-                comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename);
+                comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename, 0);
                 comp_bufp->is_compressed = 0;
             }
 
@@ -1327,21 +1330,24 @@ decompress(void *arg)
 
 void verify_chunks() {
     u_int8_t chunk_file[DEDUP_HASH_FILENAME_MAX];
-    int i;
+    int i, missing = 0;
     for (i = 0; i < g_block_count; i++) {
         uint8_t dedup_exists;
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
         if ((g_opt_update || g_opt_no_create) && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
         dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1);
-        dedup_exists = file_exists(chunk_file);
+        dedup_exists = file_exists(chunk_file, 0);
         g_block_is_compressed[i] = 1;
         if (!dedup_exists && g_version > 1) {
             dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
-            dedup_exists = file_exists(chunk_file);
+            dedup_exists = file_exists(chunk_file, 1);
             g_block_is_compressed[i] = 0;
         }
-        vdie_if_n(!dedup_exists, "verify: chunk %s does not exist", chunk_file);
+        if (!dedup_exists) {
+            missing++;
+        }
     }
+    vdie_if_n(missing > 0, "verify_simple: %d chunks are missing!", missing);
     BACKY_LOG("verify_simple: all chunks available\n");
     BACKY_LOG("accumulated_chunk_size: %" PRIu64 "\n", g_accumulated_chunk_size);
 }
@@ -1495,8 +1501,11 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTZdvcuni:o:b:p:m:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTZdvcun0i:o:b:p:m:X:")) != -1) {
         switch (c) {
+        case '0':
+            g_opt_delete_zero_byte_chunks = 1;
+            break;
         case '1':
             g_version = 1;
             break;
@@ -1585,16 +1594,17 @@ main(int argc, char **argv)
 
     if (opt_error) {
         BACKY_LOG("operations:\n"
-            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-Z|-n] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-0] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-0] [-Z|-n] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
-            " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-X chunkdir]\n"
-            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-m minthr] [-p maxthr] [-X chunkdir]\n\n"
+            " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-0] [-X chunkdir]\n"
+            " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-0] [-m minthr] [-p maxthr] [-X chunkdir]\n\n"
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
+            " -0 delete zero byte chunks on decompress and verify\n"
             " -Z do not write zero chunks on decompress\n"
             " -n do not overwrite output file and skip 0x00 chunks\n"
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
