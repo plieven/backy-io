@@ -137,6 +137,7 @@ static int g_write_fd;      /* File descriptor to output to */
 static volatile uint64_t g_in_bytes = 0;        /* Bytes read */
 static volatile uint64_t g_blocks_processed = 0;       /* Blocks processed */
 static volatile uint64_t g_out_bytes = 0;   /* Bytes written */
+static volatile uint64_t g_accumulated_chunk_size = 0;   /* Size of all chunks checked with file_exists */
 
 static int g_opt_verbose    = 0;        /* Verbose flag is set */
 static int g_opt_decompress = 0;    /* Decompress is set */
@@ -302,6 +303,7 @@ int file_exists(u_int8_t * filename)
         return 0;
     }
     if (g_opt_verbose > 2) BACKY_LOG(" FOUND!\n");
+    g_accumulated_chunk_size += st.st_size;
     return 1;
 }
 
@@ -1341,6 +1343,7 @@ void verify_chunks() {
         vdie_if_n(!dedup_exists, "verify: chunk %s does not exist", chunk_file);
     }
     BACKY_LOG("verify_simple: all chunks available\n");
+    BACKY_LOG("accumulated_chunk_size: %" PRIu64 "\n", g_accumulated_chunk_size);
 }
 
 static void
