@@ -129,8 +129,15 @@ static int qb_parse_json(FILE *log, struct qb_connection *qb, char *path) {
 		   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 	fflush(log);
 	close(fd);
-	assert(g_version == 2);
-	assert(g_metadata);
+
+    if (g_version < 2) {
+        fprintf(log, "backy version is < 2\n");
+        goto out;
+    }
+    if (!g_metadata) {
+        fprintf(log, "json has no metadata section\n");
+        goto out;
+    }
 
 	value = json_parse((json_char*) g_metadata, strlen(g_metadata));
 
