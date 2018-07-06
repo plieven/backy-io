@@ -71,7 +71,10 @@ int main(int argc, char** argv) {
 
 	for (i = 0; i < qb.obj_count; i++) {
 		if (OBJ_IS_ALLOCATED(errormap, i) && !OBJ_IS_ALLOCATED(qb.bitmap, i)) {
+			char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
 			fprintf(log, "FATAL ERROR: object #%lu failed checksum test, but is not marked as changed\n", i);
+			dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
+			fprintf(log, "FATAL ERROR: object #%lu hash on backup: %s\n", i, dedup_hash);
 			ret = 2;
 			goto out;
 		}
