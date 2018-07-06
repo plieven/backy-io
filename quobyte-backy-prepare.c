@@ -113,7 +113,7 @@ again:
     }
 
     if (qb->obj_count != g_block_count) {
-        fprintf(log, "object count changed from %lu to %lu", g_block_count, qb->obj_count);
+        fprintf(log, "object count changed from %lu to %lu\n", g_block_count, qb->obj_count);
         vgotoout_if_n(recovery_mode, "object count is not allowed to change in RECOVERY MODE", 0);
         if (g_filesize % qb->obj_size) {
             /* we have to mark the last block of the old backup as dirty as it will
@@ -133,7 +133,7 @@ again:
     }
 
     if (qb->filesize != g_filesize) {
-        fprintf(log, "filesize changed from %lu to %lu", g_filesize, qb->filesize);
+        fprintf(log, "filesize changed from %lu to %lu\n", g_filesize, qb->filesize);
         vgotoout_if_n(recovery_mode, "filesize is not allowed to change in RECOVERY MODE", 0);
         g_filesize = qb->filesize;
         if (g_filesize % qb->obj_size) {
