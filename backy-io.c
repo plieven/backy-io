@@ -1330,7 +1330,7 @@ decompress(void *arg)
 
 void verify_chunks() {
     u_int8_t chunk_file[DEDUP_HASH_FILENAME_MAX];
-    int i, missing = 0;
+    unsigned long i, missing = 0;
     for (i = 0; i < g_block_count; i++) {
         uint8_t dedup_exists;
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
@@ -1347,7 +1347,7 @@ void verify_chunks() {
             missing++;
         }
     }
-    vdie_if_n(missing > 0, "verify_simple: %d chunks are missing!", missing);
+    vdie_if_n(missing > 0, "verify_simple: %lu chunks are missing!", missing);
     BACKY_LOG("verify_simple: all chunks available\n");
     BACKY_LOG("accumulated_chunk_size: %" PRIu64 "\n", g_accumulated_chunk_size);
 }
