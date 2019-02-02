@@ -710,7 +710,11 @@ write_compressed(void *arg)
                 dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
                 fprintf(fp, "%s\"%lu\":\"%s\"", seq ? "," : "", seq, dedup_hash);
                 seq++;
-                dedup_existing++;
+                if (dedup_is_zero_chunk(&g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES])) {
+                    zeroblocks++;
+                } else {
+                    dedup_existing++;
+                }
                 continue;
             }
         }
@@ -732,16 +736,14 @@ write_compressed(void *arg)
             if (!bufp->dedup_exists) {
                 dedup_new++;
                 dedup_new_comp+=bufp->is_compressed;
+            } else if (dedup_is_zero_chunk(&bufp->hash[0])) {
+                zeroblocks++;
             } else {
                 dedup_existing++;
             }
 
             dedup_hash_sprint(bufp->hash, &dedup_hash[0]);
             fprintf(fp, "%s\"%lu\":\"%s\"", seq ? "," : "", seq, dedup_hash);
-
-            if (dedup_is_zero_chunk(&bufp->hash[0])) {
-                zeroblocks++;
-            }
 
         }
 
