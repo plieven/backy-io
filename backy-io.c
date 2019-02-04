@@ -686,6 +686,7 @@ write_compressed(void *arg)
     int dedup_new_comp=0;
     int dedup_existing=0;
     int zeroblocks=0;
+    int zeroblocks_new=0;
     FILE *fp = stdout;
     uint8_t dedup_hash[DEDUP_MAC_SIZE_STR] = {};
 
@@ -738,6 +739,7 @@ write_compressed(void *arg)
                 dedup_new_comp+=bufp->is_compressed;
             } else if (dedup_is_zero_chunk(&bufp->hash[0])) {
                 zeroblocks++;
+                zeroblocks_new++;
             } else {
                 dedup_existing++;
             }
@@ -769,7 +771,7 @@ write_compressed(void *arg)
     fprintf(fp, "}\n");
     fclose(fp);
 
-    BACKY_LOG("dedup: new %d new_compressed %d existing %d zeroblocks %d\n", dedup_new, dedup_new_comp, dedup_existing, zeroblocks);
+    BACKY_LOG("dedup: new %d new_compressed %d existing %d zeroblocks %d zeroblocks_new %d\n", dedup_new, dedup_new_comp, dedup_existing, zeroblocks, zeroblocks_new);
 
     return (NULL);
 }
