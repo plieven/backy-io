@@ -1680,6 +1680,7 @@ out:
     vol_buf_q_reinit(&comp_q_free, 0);
     free(g_chunk_dir);
     g_free();
+    close(read_fd);
     BACKY_LOG("exit: %s\n", !errors ? "SUCCESS" : "FAIL");
     return (errors);
 }
