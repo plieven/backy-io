@@ -288,7 +288,7 @@ vol_int_set(vol_int *vi, int newval)
 
 /* ======================================================================== */
 
-int file_exists(u_int8_t * filename, int report_not_found)
+int file_exists(u_int8_t * filename, int report_not_found, int count)
 {
     struct stat st;
     int ret;
@@ -306,7 +306,9 @@ int file_exists(u_int8_t * filename, int report_not_found)
         }
         return 0;
     }
-    g_accumulated_chunk_size += st.st_size;
+    if (count) {
+        g_accumulated_chunk_size += st.st_size;
+    }
     return 1;
 }
 
@@ -837,7 +839,7 @@ compress(void *arg)
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
             mmh3(&(bufp->buf), bufp->length.val, 0, &comp_bufp->hash[0]);
             dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1);
-            comp_bufp->dedup_exists = file_exists(dedup_filename, 0);
+            comp_bufp->dedup_exists = file_exists(dedup_filename, 0, 0);
             comp_bufp->is_compressed = 1;
 
             if (!comp_bufp->dedup_exists)
@@ -1320,12 +1322,21 @@ void verify_chunks() {
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
         if ((g_opt_update || g_opt_no_create) && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
         dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1);
-        dedup_exists = file_exists(chunk_file, 0);
+        dedup_exists = file_exists(chunk_file, 0, 1);
         g_block_is_compressed[i] = 1;
-        if (!dedup_exists && g_version > 1) {
+        if (!dedup_exists) {
+            if (g_version > 1) {
+                dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
+                dedup_exists = file_exists(chunk_file, 1, 1);
+                g_block_is_compressed[i] = 0;
+            }
+        } else if (g_opt_delete_zero_byte_chunks) {
             dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
-            dedup_exists = file_exists(chunk_file, 1);
-            g_block_is_compressed[i] = 0;
+            if (file_exists(chunk_file, 0, 0)) {
+                BACKY_LOG("INFO: chunk '%s' coexists with its compressed version!\n", chunk_file);
+                BACKY_LOG("deleting chunk '%s'...\n", chunk_file);
+                vdie_if(unlink(chunk_file) < 0, "unlink: %s", chunk_file);
+            }
         }
         if (!dedup_exists) {
             missing++;
