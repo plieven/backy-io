@@ -835,17 +835,12 @@ compress(void *arg)
 
         if (bufp->length.val > 0) {
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
-            mmh3(&(bufp->buf), bufp->length.val, 0, &bufp->hash[0]);
-            dedup_hash_filename(dedup_filename, &bufp->hash[0], 1);
-            comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename, 0);
+            mmh3(&(bufp->buf), bufp->length.val, 0, &comp_bufp->hash[0]);
+            dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1);
+            comp_bufp->dedup_exists = file_exists(dedup_filename, 0);
             comp_bufp->is_compressed = 1;
-            if (!bufp->dedup_exists && g_version > 1) {
-                dedup_hash_filename(dedup_filename, &bufp->hash[0], 0);
-                comp_bufp->dedup_exists = bufp->dedup_exists = file_exists(dedup_filename, 0);
-                comp_bufp->is_compressed = 0;
-            }
 
-            if (!bufp->dedup_exists)
+            if (!comp_bufp->dedup_exists)
              {
             (void) lzo1x_1_compress(
                 (unsigned char *) &(bufp->buf),
@@ -863,12 +858,10 @@ compress(void *arg)
             }
        }
 
-
         /* Set the sequence number, hash etc. */
         sequence = bufp->seq;
         comp_bufp->seq = sequence;
-        memcpy(&comp_bufp->hash, &bufp->hash, DEDUP_MAC_SIZE_BYTES);
-        if (bufp->dedup_exists || !bufp->length.val) {
+        if (comp_bufp->dedup_exists || !bufp->length.val) {
             /* we have not set the length in the comp_bufp */
             comp_bufp->length.val = bufp->length.val;
         }
