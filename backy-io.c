@@ -729,7 +729,7 @@ write_compressed(void *arg)
 
         length = bufp->length.val;
         if (length > 0) {
-            assert(g_version == 1 || length <= g_block_size);
+            assert(g_version == 1 || length <= g_block_size + COMPRESS_OVERHEAD);
 
             if (g_opt_verbose > 1) {
                 BACKY_LOG("write: seq %lu dedup_exists %d is_compressed %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, bufp->length.val);
@@ -785,7 +785,6 @@ compress(void *arg)
 {
     vol_buf *bufp;
     vol_buf *comp_bufp;
-    vol_buf *write_buf;
     unsigned long sequence;
     char *work_buf;
 #ifndef NDEBUG
@@ -865,37 +864,25 @@ compress(void *arg)
        }
 
 
-        /* Set the sequence number */
+        /* Set the sequence number, hash etc. */
         sequence = bufp->seq;
         comp_bufp->seq = sequence;
-
-        /* Did we get negative compression? */
-        if (bufp->dedup_exists || !bufp->length.val || 
-           (g_version > 1 && comp_bufp->length.val >= g_block_size &&
-            bufp->length.val == g_block_size)) {
-            /* Yes - write out original block */
-            put_last(&in_q_free, comp_bufp);
-            write_buf = bufp;
-        } else {
-            /*
-             * No - post the input buffer back to the input
-             * thread's free list, and the decompressed buffer
-             * on to the queue for the write thread.
-             */
-            memcpy(&comp_bufp->hash, &bufp->hash, DEDUP_MAC_SIZE_BYTES);
-            put_last(&in_q_free, bufp);
-            write_buf = comp_bufp;
+        memcpy(&comp_bufp->hash, &bufp->hash, DEDUP_MAC_SIZE_BYTES);
+        if (bufp->dedup_exists || !bufp->length.val) {
+            /* we have not set the length in the comp_bufp */
+            comp_bufp->length.val = bufp->length.val;
         }
+        put_last(&in_q_free, bufp);
 
 #ifndef NDEBUG
         blocks_compressed++;
 #endif
-        if (!write_buf->dedup_exists && write_buf->length.val > 0) {
+        if (!comp_bufp->dedup_exists && comp_bufp->length.val > 0) {
             int g_write_fd_dedup;
             ssize_t bytes;
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
-            dedup_hash_filename(dedup_filename, &write_buf->hash[0], write_buf->is_compressed);
-            dedup_hash_mkdir(write_buf->hash);
+            dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], comp_bufp->is_compressed);
+            dedup_hash_mkdir(comp_bufp->hash);
             g_write_fd_dedup = open(dedup_filename,
               O_WRONLY | O_LARGEFILE | O_CREAT | O_EXCL, 0666);
             if (g_write_fd_dedup < 0) {
@@ -903,9 +890,9 @@ compress(void *arg)
                     vdie_if(1,"dedup chunk write: %s", dedup_filename);
                 }
                 BACKY_LOG("dedup write collision: %s\n", dedup_filename);
-                write_buf->dedup_exists = 1;
+                comp_bufp->dedup_exists = 1;
             } else {
-                bytes = write(g_write_fd_dedup, &(write_buf->buf), write_buf->length.val);
+                bytes = write(g_write_fd_dedup, &(comp_bufp->buf), comp_bufp->length.val);
                 close(g_write_fd_dedup);
                 if (bytes < 0) {
                     unlink(dedup_filename);
@@ -913,7 +900,7 @@ compress(void *arg)
                 die_if(bytes < 0, ESTR_WRITE);
             }
         }
-        put_last(&comp_q_dirty, write_buf);
+        put_last(&comp_q_dirty, comp_bufp);
 
         (void) increment(&g_comp_idle);
         (void) decrement(&g_comp_buffers);
