@@ -1335,7 +1335,7 @@ void verify_chunks() {
             if (file_exists(chunk_file, 0, 0)) {
                 BACKY_LOG("INFO: chunk '%s' coexists with its compressed version!\n", chunk_file);
                 BACKY_LOG("deleting chunk '%s'...\n", chunk_file);
-                vdie_if(unlink(chunk_file) < 0, "unlink: %s", chunk_file);
+                vdie_if(unlink(chunk_file) < 0 && errno != ENOENT, "unlink: %s", chunk_file);
             }
         }
         if (!dedup_exists) {
