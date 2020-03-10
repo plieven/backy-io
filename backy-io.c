@@ -1263,7 +1263,7 @@ decompress(void *arg)
         /* Set the sequence number */
         comp_bufp->seq = bufp->seq;
 
-        if (bufp->length.val == g_block_size && g_version > 1) {
+        if (!g_block_is_compressed[bufp->seq]) {
             put_last(&in_q_free, comp_bufp);
             put_last(&comp_q_dirty, bufp);
             //XXX: verify if the hash is ok ?!
