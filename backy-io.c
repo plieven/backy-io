@@ -703,13 +703,14 @@ write_compressed(void *arg)
             if (seq == g_block_count) break;
             if (memcmp(g_zeroblock, g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
                 dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-                fprintf(fp, "%s\"%lu\":\"%s\"", seq ? "," : "", seq, dedup_hash);
+                fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count ? "," : "", seq, dedup_hash);
                 if (dedup_is_zero_chunk(&g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES])) {
                     zeroblocks++;
                 } else {
                     dedup_existing++;
                 }
                 seq++;
+                mapping_count++;
                 continue;
             }
         }
