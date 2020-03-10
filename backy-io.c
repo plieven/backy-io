@@ -148,6 +148,7 @@ static int g_opt_verify     = 0;        /* Verify is set */
 static int g_opt_verify_simple = 0;     /* Verify simple is set */
 static int g_opt_verify_decompressed = 0;       /* Verify of decompressed chunks is set */
 static int g_opt_skip_zeroes = 0;       /* Skip zeroes on decompress */
+static int g_opt_skip_verify = 0;       /* Skip verify chunks before decompress */
 static int g_opt_no_create   = 0;       /* Do not create output file on decompress, skip 0x00 chunks */
 static int g_opt_delete_zero_byte_chunks = 0;        /* delete zero byte chunks on verify */
 
@@ -1497,10 +1498,13 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTZdvcun0i:o:b:p:m:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTZdvcun0si:o:b:p:m:X:")) != -1) {
         switch (c) {
         case '0':
             g_opt_delete_zero_byte_chunks = 1;
+            break;
+        case 's':
+            g_opt_skip_verify = 1;
             break;
         case '1':
             g_version = 1;
@@ -1587,10 +1591,18 @@ main(int argc, char **argv)
         opt_error++;
     }
 
+    if (g_opt_delete_zero_byte_chunks && g_opt_skip_verify) {
+        opt_error++;
+    }
+
+    if (g_opt_skip_zeroes && g_opt_no_create) {
+        opt_error++;
+    }
+
     if (opt_error) {
         BACKY_LOG("operations:\n"
-            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-0] [-m minthr] [-p maxthr] [-X chunkdir]\n"
-            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-0] [-Z|-n] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-0|-s] [-m minthr] [-p maxthr] [-X chunkdir]\n"
+            " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-0|-s] [-Z|-n] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
@@ -1602,6 +1614,7 @@ main(int argc, char **argv)
             " -0 delete zero byte chunks on decompress and verify\n"
             " -Z do not write zero chunks on decompress\n"
             " -n do not overwrite output file and skip 0x00 chunks\n"
+            " -s skip verify_chunks before decompress if version 3\n"
             " -1 force write of version 1 backups (blocksize must be 4096kB)\n"
             " -m <num> minimum number of threads\n"
             " -p <num> maximum number of threads\n"
@@ -1657,7 +1670,7 @@ main(int argc, char **argv)
         compress_fd(read_fd);
     } else if (g_opt_decompress || g_opt_verify || g_opt_verify_simple) {
         if (parse_json(read_fd)) exit(1);
-        verify_chunks();
+        if (g_opt_verify_simple || !g_opt_skip_verify || g_version < 3) verify_chunks();
         if (g_opt_verify_simple) goto out;
         init_zero_block();
         decompress_fd(g_opt_decompress ? read_fd : -1);
