@@ -660,17 +660,6 @@ wakeup(vol_buf_q *bufq)
         ESTR_MUTEX_UNLOCK);
 }
 
-void init_zero_block() {
-    uint8_t h[DEDUP_MAC_SIZE_STR] = {};
-    if (g_zeroblock) return;
-    g_zeroblock = valloc(g_block_size);
-    die_if(!g_zeroblock, ESTR_MALLOC);
-    memset(g_zeroblock, 0x00, g_block_size);
-    mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
-    dedup_hash_sprint(g_zeroblock_hash, h);
-    BACKY_LOG("init_zero_block: zeroblock hash is %s\n", h);
-}
-
 static int dedup_is_zero_chunk(u_int8_t *hash) {
     if (!g_zeroblock) init_zero_block();
     return !memcmp(hash, g_zeroblock_hash, DEDUP_MAC_SIZE_BYTES);

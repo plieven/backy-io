@@ -149,6 +149,33 @@ pthread_mutex_t log_mutex;
     if (cond) { \
         diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); exit(1); } }
 
+static void init_zero_block() {
+    uint8_t h[DEDUP_MAC_SIZE_STR] = {};
+    if (g_zeroblock) return;
+    g_zeroblock = valloc(g_block_size);
+    die_if(!g_zeroblock, ESTR_MALLOC);
+    memset(g_zeroblock, 0x00, g_block_size);
+    mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
+    dedup_hash_sprint(g_zeroblock_hash, h);
+    BACKY_LOG("init_zero_block: zeroblock hash is %s\n", h);
+}
+
+static void g_free() {
+    free(g_zeroblock);
+    g_zeroblock = NULL;
+    free(g_metadata);
+    g_metadata = NULL;
+    free(g_block_mapping);
+    g_block_mapping = NULL;
+    free(g_block_is_compressed);
+    g_block_is_compressed = NULL;
+    g_block_size = CBLK_SIZE;
+    g_version = 1;
+    g_filesize = 0;     /* size of the uncompressed data */
+    g_block_count = 0;
+    g_crc32c_expected = 0xffffffff;
+}
+
 #define vgotoout_if_n(cond, str, ...) { \
     if (cond) { \
         diag(DIAG_NOT_ERRNO, str, __VA_ARGS__); goto out; } }
@@ -295,20 +322,4 @@ out:
     json_value_free(value);
 
     return ret;
-}
-
-static void g_free() {
-    free(g_zeroblock);
-    g_zeroblock = NULL;
-    free(g_metadata);
-    g_metadata = NULL;
-    free(g_block_mapping);
-    g_block_mapping = NULL;
-    free(g_block_is_compressed);
-    g_block_is_compressed = NULL;
-    g_block_size = CBLK_SIZE;
-    g_version = 1;
-    g_filesize = 0;     /* size of the uncompressed data */
-    g_block_count = 0;
-    g_crc32c_expected = 0xffffffff;
 }
