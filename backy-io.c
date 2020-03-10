@@ -678,6 +678,7 @@ write_compressed(void *arg)
     int dedup_existing=0;
     int zeroblocks=0;
     int zeroblocks_new=0;
+    unsigned mapping_count = 0;
     FILE *fp = stdout;
     uint8_t dedup_hash[DEDUP_MAC_SIZE_STR] = {};
 
@@ -720,24 +721,27 @@ write_compressed(void *arg)
 
         length = bufp->length.val;
         if (length > 0) {
+            int is_zero = dedup_is_zero_chunk(&bufp->hash[0]);
             assert(g_version == 1 || length <= g_block_size + COMPRESS_OVERHEAD);
 
             if (g_opt_verbose > 1) {
-                BACKY_LOG("write: seq %lu dedup_exists %d is_compressed %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, bufp->length.val);
+                BACKY_LOG("write: seq %lu dedup_exists %d is_compressed %d is_zero %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, is_zero, bufp->length.val);
             }
             if (!bufp->dedup_exists) {
                 dedup_new++;
                 dedup_new_comp+=bufp->is_compressed;
-            } else if (dedup_is_zero_chunk(&bufp->hash[0])) {
+            } else if (is_zero) {
                 zeroblocks++;
                 zeroblocks_new++;
             } else {
                 dedup_existing++;
             }
 
-            dedup_hash_sprint(bufp->hash, &dedup_hash[0]);
-            fprintf(fp, "%s\"%lu\":\"%s\"", seq ? "," : "", seq, dedup_hash);
-
+            if (!is_zero || g_version < 3) {
+                dedup_hash_sprint(bufp->hash, &dedup_hash[0]);
+                fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count ? "," : "", seq, dedup_hash);
+                mapping_count++;
+            }
         }
 
         /* Buffer is now free */
@@ -1238,7 +1242,7 @@ decompress(void *arg)
         int read_fd_dedup;
         u_int8_t dedup_file[DEDUP_HASH_FILENAME_MAX];
         dedup_hash_filename(dedup_file, g_block_mapping + bufp->seq * DEDUP_MAC_SIZE_BYTES,
-                            g_block_is_compressed[bufp->seq]);
+                            g_version != 2 || g_block_is_compressed[bufp->seq]);
         vdie_if((read_fd_dedup = open(dedup_file,
                 O_RDONLY)) < 0,
                 "open: %s", dedup_file);
@@ -1252,7 +1256,7 @@ decompress(void *arg)
         /* Set the sequence number */
         comp_bufp->seq = bufp->seq;
 
-        if (!g_block_is_compressed[bufp->seq]) {
+        if (g_version == 2 && !g_block_is_compressed[bufp->seq]) {
             put_last(&in_q_free, comp_bufp);
             put_last(&comp_q_dirty, bufp);
             //XXX: verify if the hash is ok ?!
@@ -1312,9 +1316,12 @@ void verify_chunks() {
         if ((g_opt_update || g_opt_no_create) && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
         dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1);
         dedup_exists = file_exists(chunk_file, 0, 1);
-        g_block_is_compressed[i] = 1;
+        if (g_version == 2) {
+            assert(g_block_is_compressed);
+            g_block_is_compressed[i] = 1;
+        }
         if (!dedup_exists) {
-            if (g_version > 1) {
+            if (g_version == 2) {
                 dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
                 dedup_exists = file_exists(chunk_file, 1, 1);
                 g_block_is_compressed[i] = 0;
@@ -1516,11 +1523,10 @@ main(int argc, char **argv)
             break;
         case 'c':
             g_opt_compress = 1;
-            g_version = 2;
+            g_version = 3;
             break;
         case 'u':
             g_opt_update = 1;
-            g_version = 2;
             break;
         case 'i':
             /* Input file specified */
