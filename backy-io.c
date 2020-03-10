@@ -94,6 +94,7 @@ typedef struct vol_buf {
     u_int64_t seq;      /* Sequence number */
     uint8_t dedup_exists;
     uint8_t is_compressed;
+    uint8_t is_zero;
     char hash[DEDUP_MAC_SIZE_BYTES];
     u_int8_t _align[7];
     ulong_4char length;     /* How much is used */
@@ -721,23 +722,23 @@ write_compressed(void *arg)
 
         length = bufp->length.val;
         if (length > 0) {
-            int is_zero = dedup_is_zero_chunk(&bufp->hash[0]);
             assert(g_version == 1 || length <= g_block_size + COMPRESS_OVERHEAD);
 
             if (g_opt_verbose > 1) {
-                BACKY_LOG("write: seq %lu dedup_exists %d is_compressed %d is_zero %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, is_zero, bufp->length.val);
-            }
-            if (!bufp->dedup_exists) {
-                dedup_new++;
-                dedup_new_comp+=bufp->is_compressed;
-            } else if (is_zero) {
-                zeroblocks++;
-                zeroblocks_new++;
-            } else {
-                dedup_existing++;
+                BACKY_LOG("write: seq %lu dedup_exists %d is_compressed %d is_zero %d length %lu\n", bufp->seq, bufp->dedup_exists, bufp->is_compressed, bufp->is_zero, bufp->length.val);
             }
 
-            if (!is_zero || g_version < 3) {
+            if (bufp->is_zero) {
+                zeroblocks++;
+                zeroblocks_new++;
+            } else if (bufp->dedup_exists) {
+                dedup_existing++;
+            } else {
+                dedup_new++;
+                dedup_new_comp+=bufp->is_compressed;
+            }
+
+            if (!bufp->is_zero || g_version < 3) {
                 dedup_hash_sprint(bufp->hash, &dedup_hash[0]);
                 fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count ? "," : "", seq, dedup_hash);
                 mapping_count++;
@@ -827,36 +828,40 @@ compress(void *arg)
         
         comp_bufp->dedup_exists = bufp->dedup_exists = 0;
         comp_bufp->is_compressed = bufp->is_compressed = 0;
+        comp_bufp->is_zero = bufp->is_zero = 0;
 
         if (bufp->length.val > 0) {
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
             mmh3(&(bufp->buf), bufp->length.val, 0, &comp_bufp->hash[0]);
-            dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1);
-            comp_bufp->dedup_exists = file_exists(dedup_filename, 0, 0);
-            comp_bufp->is_compressed = 1;
-
-            if (!comp_bufp->dedup_exists)
-             {
-            (void) lzo1x_1_compress(
-                (unsigned char *) &(bufp->buf),
-                bufp->length.val,
-                (unsigned char *) &(comp_bufp->buf) + 5,
-                (unsigned long *) &(comp_bufp->length),
-                work_buf);
+            comp_bufp->is_zero = dedup_is_zero_chunk(&comp_bufp->hash[0]);
+            if (!comp_bufp->is_zero || g_version == 1) {
+                dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1);
+                comp_bufp->dedup_exists = file_exists(dedup_filename, 0, 0);
                 comp_bufp->is_compressed = 1;
-                comp_bufp->buf[0] = 0xf0;
-                comp_bufp->buf[1] = bufp->length.val >> 24;
-                comp_bufp->buf[2] = bufp->length.val >> 16;
-                comp_bufp->buf[3] = bufp->length.val >> 8;
-                comp_bufp->buf[4] = bufp->length.val;
-                comp_bufp->length.val += 5;
+
+                if (!comp_bufp->dedup_exists)
+                 {
+                (void) lzo1x_1_compress(
+                    (unsigned char *) &(bufp->buf),
+                    bufp->length.val,
+                    (unsigned char *) &(comp_bufp->buf) + 5,
+                    (unsigned long *) &(comp_bufp->length),
+                    work_buf);
+                    comp_bufp->is_compressed = 1;
+                    comp_bufp->buf[0] = 0xf0;
+                    comp_bufp->buf[1] = bufp->length.val >> 24;
+                    comp_bufp->buf[2] = bufp->length.val >> 16;
+                    comp_bufp->buf[3] = bufp->length.val >> 8;
+                    comp_bufp->buf[4] = bufp->length.val;
+                    comp_bufp->length.val += 5;
+                }
             }
        }
 
         /* Set the sequence number, hash etc. */
         sequence = bufp->seq;
         comp_bufp->seq = sequence;
-        if (comp_bufp->dedup_exists || !bufp->length.val) {
+        if (comp_bufp->dedup_exists || !bufp->length.val || comp_bufp->is_zero) {
             /* we have not set the length in the comp_bufp */
             comp_bufp->length.val = bufp->length.val;
         }
@@ -865,7 +870,7 @@ compress(void *arg)
 #ifndef NDEBUG
         blocks_compressed++;
 #endif
-        if (!comp_bufp->dedup_exists && comp_bufp->length.val > 0) {
+        if (!comp_bufp->dedup_exists && comp_bufp->length.val > 0 && (!comp_bufp->is_zero || g_version == 1)) {
             int g_write_fd_dedup;
             ssize_t bytes;
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
@@ -1646,7 +1651,7 @@ main(int argc, char **argv)
                 0)) < 0, "open: %s", optarg);
         if (parse_json(write_fd)) exit(1);
         close(write_fd);
-        if (!g_zeroblock) init_zero_block();
+        init_zero_block();
         vdie_if(fstat(read_fd, &st) < 0, "fstat failed", 0);
         vdie_if(st.st_size != g_filesize, "input filesize does not match backup filesize (%lu != %lu)", st.st_size, g_filesize);
         compress_fd(read_fd);
@@ -1657,6 +1662,7 @@ main(int argc, char **argv)
         init_zero_block();
         decompress_fd(g_opt_decompress ? read_fd : -1);
     } else {
+        init_zero_block();
         dedup_mkdir(g_chunk_dir);
         compress_fd(read_fd);
     }
