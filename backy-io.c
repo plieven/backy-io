@@ -662,11 +662,6 @@ wakeup(vol_buf_q *bufq)
         ESTR_MUTEX_UNLOCK);
 }
 
-static int dedup_is_zero_chunk(u_int8_t *hash) {
-    if (!g_zeroblock) init_zero_block();
-    return !memcmp(hash, g_zeroblock_hash, DEDUP_MAC_SIZE_BYTES);
-}
-
 /* ======================================================================== */
 
 static void *

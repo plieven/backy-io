@@ -110,6 +110,9 @@ again:
         if (qb_parse_json(log, qb, arg_old)) {
             goto out;
         }
+    } else {
+        g_version = 3;
+        g_block_size = qb->obj_size;
     }
 
     if (qb->obj_count != g_block_count) {
@@ -123,9 +126,7 @@ again:
         }
         g_block_mapping = realloc(g_block_mapping, qb->obj_count * DEDUP_MAC_SIZE_BYTES);
         assert(g_block_mapping);
-        g_zeroblock = calloc(1, qb->obj_size);
-        assert(g_zeroblock);
-        mmh3(g_zeroblock, qb->obj_size, 0, &g_zeroblock_hash[0]);
+        init_zero_block();
         for (i = g_block_count; i < qb->obj_count; i++) {
             memcpy(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &g_zeroblock_hash[0], DEDUP_MAC_SIZE_BYTES);
         }
@@ -165,6 +166,10 @@ again:
     if (!interactive_mode && qb->obj_count <= 1024) fprintf(log, "\n\n");
     fprintf(log, "number of changed objects = %d\n", num_changed);
 
+    if (g_version > 2) {
+        init_zero_block();
+    }
+
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     fp = fopen(arg_new, "w");
     if (!fp) {
@@ -173,17 +178,19 @@ again:
     }
 
     fprintf(fp, "{\n");
-    fprintf(fp, " \"version\" : 2,\n");
+    fprintf(fp, " \"version\" : %d,\n", g_version);
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %u,\n", qb->obj_size);
     fprintf(fp, " \"mapping\" : {");
     if (qb->obj_count > 0) {
-         dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
-         fprintf(fp, "\"0\":\"%s\"", dedup_hash);
+        dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
+        fprintf(fp, "\"0\":\"%s\"", dedup_hash);
     }
     for (i = 1; i < qb->obj_count; i++) {
-         dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-         fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
+        if (g_version < 3 || !dedup_is_zero_chunk(&g_block_mapping[i * DEDUP_MAC_SIZE_BYTES])) {
+            dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
+            fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
+        }
     }
     fprintf(fp, "},\n");
     if (!recovery_mode) {

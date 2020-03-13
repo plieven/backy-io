@@ -161,6 +161,11 @@ static void init_zero_block() {
     BACKY_LOG("init_zero_block: zeroblock hash is %s\n", h);
 }
 
+static int dedup_is_zero_chunk(u_int8_t *hash) {
+    if (!g_zeroblock) init_zero_block();
+    return !memcmp(hash, g_zeroblock_hash, DEDUP_MAC_SIZE_BYTES);
+}
+
 static void g_free() {
     free(g_zeroblock);
     g_zeroblock = NULL;
