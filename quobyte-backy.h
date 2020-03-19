@@ -73,7 +73,7 @@ static int qb_refresh_file(FILE *log, struct qb_connection *qb) {
 
 static int qb_open_file(FILE *log, struct qb_connection *qb, char *path) {
 	struct timespec tstart={}, tend={};
-	size_t file_id_sz;
+	ssize_t file_id_sz;
 	assert (!qb->fh);
 	memset(qb, 0x00, sizeof(struct qb_connection));
 	clock_gettime(CLOCK_MONOTONIC, &tstart);
