@@ -1,15 +1,11 @@
-#include <rbd/librbd.h>
+#include <sys/types.h>
+#include <limits.h>
 
 #define OBJ_IS_ALLOCATED(bitmap, i) (bitmap[i / 8] & (1 << (i % 8)))
 #define OBJ_SET_ALLOCATED(bitmap, i) (bitmap[i / 8] |= (1 << (i % 8)))
 #define OBJ_CLEAR_ALLOCATED(bitmap, i) (bitmap[i / 8] &= ~(1 << (i % 8)))
 
-#ifdef DEBUG
-#define DPRINTF(fmt,args...) do { fprintf(stderr, DEBUG_PREFIX);fprintf(stderr, (fmt), ##args); fprintf(stderr,"\n"); } while (0);
-#else
-#define DPRINTF(fmt,args...)
-#define DEBUG 0
-#endif
+#include "rbd-parse.h"
 
 #define MAX_SNAPS 100
 #define SECURITY_SECS 300
@@ -19,109 +15,17 @@ struct rbd_connection {
     rados_ioctx_t io_ctx;
     rbd_image_t image;
     rbd_image_info_t info;
+    char fsid[37];
     char block_name_prefix[RBD_MAX_BLOCK_NAME_SIZE];
+    char id[RBD_MAX_BLOCK_NAME_SIZE];
     uint64_t stripe_unit;
     uint64_t stripe_count;
     uint64_t snap_id;
+    struct timespec snap_timestamp;
     size_t bitmap_sz;
-    char *bitmap;
+    char *alloc_bitmap;
+    char *change_bitmap;
 };
-
-static int is_rbd_path(const char *path, char **pool, char **namespace, char **imagename, char **snap, rados_t *cluster) {
-    char *tmp, *opts;
-    char* id = "admin";
-    char* conf = "/etc/ceph/ceph.conf";
-    int r = 0;
-    if (strncmp(path, "rbd:", 4)) {
-        return 0;
-    }
-
-    *pool = strdup(path + 4);
-    opts = strchr(*pool, ':');
-    if (opts) {
-        char *k, *v;
-        *opts = 0;
-        opts++;
-        
-        do {
-            k = opts;
-            opts = strchr(opts, ':');
-            if (opts) {
-                *opts = 0;
-                opts++;
-            }
-            tmp = strchr(k, '=');
-            if (tmp) {
-                *tmp = 0;
-                v = tmp + 1;
-                if (!strcmp(k, "id")) {
-                    id = v;
-                } else if (!strcmp(k, "conf")) {
-                    conf = v;
-                } else {
-                    fprintf(stderr, DEBUG_PREFIX "ignoring unknown config key: %s\n", k);
-                }
-            }
-        } while (opts);
-    }
-
-    tmp = strchr(*pool, '/');
-    if (!tmp) {
-        goto out;
-    }
-    *imagename = strdup(tmp + 1);
-    *tmp = 0;
-
-    tmp = strchr(*imagename, '/');
-    if (tmp) {
-        *namespace = *imagename;
-        *imagename = strdup(tmp + 1);
-        *tmp = 0;
-    }
-
-    tmp = strchr(*imagename, '@');
-    if (tmp) {
-        *snap = strdup(tmp + 1);
-        *tmp = 0;
-    }
-
-    DPRINTF("connecting to rados cluster with id=%s conf=%s...", id, conf);
-
-    r = rados_create(cluster, id);
-    assert (r >= 0);
-
-    r = rados_conf_read_file(*cluster, conf);
-    if (r < 0) {
-        fprintf(stderr, DEBUG_PREFIX "rados_conf_read failed (%s)\n", strerror(-r));
-        r = 0;
-        goto out;
-    }
-
-    r = rados_connect(*cluster);
-    if (r < 0) {
-        fprintf(stderr, "rados_connnect failed (%s)\n", strerror(-r));
-        r = 0;
-        goto out;
-    }
-
-    assert(r >= 0);
-
-    DPRINTF("is_rbd_path pool %s namespace %s imagename %s snap %s", *pool, *namespace, *imagename, *snap);
-    r = 1;
-
-out:
-    if (!r) {
-        free(*pool);
-        free(*namespace);
-        free(*imagename);
-        free(*snap);
-        if (*cluster) {
-            rados_shutdown(*cluster);
-            *cluster = 0;
-        }
-    }
-    return r;
-}
 
 static int backy_rbd_connect(const char *path, struct rbd_connection *conn) {
     char *image_name;
@@ -142,15 +46,24 @@ static int backy_rbd_connect(const char *path, struct rbd_connection *conn) {
     rados_ioctx_set_namespace(conn->io_ctx, namespace);    
 
     r = rbd_open_read_only(conn->io_ctx, image_name, &conn->image, snap);
-    assert(r >= 0);
+    if (r < 0) {
+        errno = -r;
+        return -1;
+    }
+
+    r = rados_cluster_fsid(conn->cluster, &conn->fsid[0], sizeof(conn->fsid));
+    assert (r >= 0);
 
     r = rbd_stat(conn->image, &conn->info, sizeof(conn->info));
     assert(r >= 0);
 
     conn->bitmap_sz = (conn->info.num_objs + 7) / 8;
-    free(conn->bitmap);
-    conn->bitmap = calloc(1, conn->bitmap_sz);
-    assert(conn->bitmap);
+    conn->alloc_bitmap = malloc(conn->bitmap_sz);
+    assert(conn->alloc_bitmap);
+    memset(conn->alloc_bitmap, 0xff, conn->bitmap_sz);
+    conn->change_bitmap = malloc(conn->bitmap_sz);
+    assert(conn->change_bitmap);
+    memset(conn->change_bitmap, 0xff, conn->bitmap_sz);
 
     r = rbd_get_stripe_unit(conn->image, &conn->stripe_unit);
     assert(r >= 0);
@@ -159,6 +72,9 @@ static int backy_rbd_connect(const char *path, struct rbd_connection *conn) {
     assert(r >= 0);
 
     r = rbd_get_block_name_prefix(conn->image, &conn->block_name_prefix[0], sizeof(conn->block_name_prefix));
+    assert(r >= 0);
+
+    r = rbd_get_id(conn->image, &conn->id[0], sizeof(conn->id));
     assert(r >= 0);
 
     if (snap) {
@@ -174,14 +90,17 @@ static int backy_rbd_connect(const char *path, struct rbd_connection *conn) {
             }
         }
         assert(conn->snap_id);
+        r = rbd_snap_get_timestamp(conn->image, conn->snap_id, &conn->snap_timestamp);
+        assert(r >= 0);
     }
 
     fprintf(stderr, "size %lu obj_size %lu num_objs %lu stripe_unit %lu stripe_count %lu snap_id %lu prefix %s\n", conn->info.size, conn->info.obj_size, conn->info.num_objs, conn->stripe_unit, conn->stripe_count, conn->snap_id, conn->block_name_prefix);
     return 0;
 }
 
-static int backy_rbd_disconnect(struct rbd_connection *conn) {
-    free(conn->bitmap);
+static void backy_rbd_disconnect(struct rbd_connection *conn) {
+    free(conn->alloc_bitmap);
+    free(conn->change_bitmap);
     if (conn->image) {
         rbd_close(conn->image);
     }
@@ -197,12 +116,15 @@ static int backy_rbd_disconnect(struct rbd_connection *conn) {
 static int backy_rbd_diff_cb(uint64_t offs, size_t len, int exists, void* opaque) {
     struct rbd_connection *conn = opaque;
     assert(!(offs % conn->info.obj_size));
-    assert(len == conn->info.obj_size);
-    OBJ_SET_ALLOCATED(conn->bitmap, offs / conn->info.obj_size);
+    assert(len <= conn->info.obj_size);
+    if (exists) {
+        OBJ_SET_ALLOCATED(conn->alloc_bitmap, offs / conn->info.obj_size);
+        OBJ_SET_ALLOCATED(conn->change_bitmap, offs / conn->info.obj_size);
+    }
     return 0;
 }
 
-static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since, int recovery) {
+static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since) {
     long ret = -1;
     unsigned int i;
     int r;
@@ -213,6 +135,9 @@ static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since, in
             return -1;
         }
     }
+
+    memset(conn->alloc_bitmap, 0x00, conn->bitmap_sz);
+    memset(conn->change_bitmap, 0x00, conn->bitmap_sz);
 
     /* fill bitmap with allocated clusters */
     r = rbd_diff_iterate2(conn->image, NULL, 0, conn->info.size, true, true, backy_rbd_diff_cb, conn);
@@ -227,13 +152,15 @@ static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since, in
             char obj_name[RBD_MAX_BLOCK_NAME_SIZE + 16 + 1 + 1];
             uint64_t size;
             time_t pmtime;
-            if (!OBJ_IS_ALLOCATED(conn->bitmap, i)) continue;
+            if (!OBJ_IS_ALLOCATED(conn->change_bitmap, i)) continue;
             snprintf(obj_name, sizeof(obj_name) - 1, "%s.%016x", conn->block_name_prefix, i);
             r = rados_stat(conn->io_ctx, obj_name, &size, &pmtime);
-            /* fprintf(stderr, "%s size %lu pmtime %lu\n", obj_name, size, pmtime); */
+            if (r < 0) {
+                fprintf(stderr, "rados_stat object %u (%s) failed with (%s)\n", i, obj_name, strerror(-r));
+            }
             assert(r >= 0);
             if (pmtime + SECURITY_SECS < since) {
-                OBJ_CLEAR_ALLOCATED(conn->bitmap, i);
+                OBJ_CLEAR_ALLOCATED(conn->change_bitmap, i);
             }
         }
         if (conn->snap_id) {
@@ -243,10 +170,72 @@ static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since, in
 
     ret = 0;
     for (i = 0; i < conn->info.num_objs; i++) {
-        if (OBJ_IS_ALLOCATED(conn->bitmap, i)) {
+        if (OBJ_IS_ALLOCATED(conn->change_bitmap, i)) {
             ret++;
         }
     }
     
     return ret;
+}
+
+static int rbd_parse_json(struct rbd_connection *conn, char *path, time_t *since) {
+	int i, ret = 1;
+	struct timespec tstart={}, tend={};
+	json_value* value = NULL;
+
+	int fd = open(path, O_RDONLY, 0);
+	if (fd < 0) {
+		fprintf(stderr, "fopen %s failed: %s\n", path, strerror(errno));
+		goto out;
+	}
+	clock_gettime(CLOCK_MONOTONIC, &tstart);
+	if (parse_json(fd)) {
+	   fprintf(stderr, "cant json parse: %s\n", path);
+	   goto out;
+	}
+	clock_gettime(CLOCK_MONOTONIC, &tend);
+	fprintf(stderr, "parse_json took about %.5f seconds\n",
+		   ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+		   ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+	fflush(stderr);
+	close(fd);
+
+    if (g_version < 2) {
+        fprintf(stderr, "backy version is < 2\n");
+        goto out;
+    }
+    if (!g_metadata) {
+        fprintf(stderr, "json has no metadata section\n");
+        goto out;
+    }
+
+	value = json_parse((json_char*) g_metadata, strlen(g_metadata));
+
+	if (!value || value->type != json_object) {
+		fprintf(stderr, "json metadata parse error\n");
+		goto out;
+	}
+
+	for (i = 0; i < value->u.object.length; i++) {
+		json_char *name = value->u.object.values[i].name;
+		json_value *val = value->u.object.values[i].value;
+		if (!strcmp(name, "rbd_id")) {
+			vgotoout_if_n(val->type != json_string, "json parser error: rbd_id has unexpected type (%d)", val->type);
+			vgotoout_if_n(val->u.string.length != strlen(&conn->id[0]) || strncmp(&conn->id[0], val->u.string.ptr, strlen(&conn->id[0])), "rbd_id in metadata does not match!", 0);
+		} else if (!strcmp(name, "rados_cluster_fsid")) {
+			vgotoout_if_n(val->type != json_string, "json parser error: rados_cluster_fsid has unexpected type (%d)", val->type);
+			vgotoout_if_n(val->u.string.length != strlen(&conn->fsid[0]) || strncmp(&conn->fsid[0], val->u.string.ptr, strlen(&conn->fsid[0])), "rados_cluster_fsid in metadata does not match!", 0);
+		} else if (!strcmp(name, "rbd_snap_timestamp")) {
+			vgotoout_if_n(val->type != json_integer, "json parser error: rbd_snap_timestamp has unexpected type (%d)", val->type);
+            *since = val->u.integer;
+        } else {
+            fprintf(stderr, "cannot handle metadata: %s\n", name);
+        }
+	}
+
+	assert(g_block_size == conn->info.obj_size);
+
+	ret = 0;
+out:
+	return ret;
 }
