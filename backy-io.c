@@ -1110,12 +1110,15 @@ write_decompressed(void *arg)
     /*CONSTCOND*/
     while (1) {
         void *buf = g_zeroblock;
-        size_t length = g_block_size;
-        /* XXX: we might access out of bounds here */
+        size_t length = MIN(g_block_size, g_filesize - g_out_bytes);
+        if (sequence == g_block_count) {
+            /* We missed g_last_block being set */
+            assert(sequence > comp_q_dirty.last_block);
+            break;
+        }
         void *buf_hash = g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES;
         uint8_t is_zero_chunk = dedup_is_zero_chunk(buf_hash);
         if (g_opt_no_create) {
-            if (sequence == g_block_count) break;
             if (!memcmp(g_zeroblock, g_block_mapping + sequence * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
                 sequence++;
                 g_out_bytes += g_block_size;
@@ -1125,7 +1128,7 @@ write_decompressed(void *arg)
         }
         if (g_opt_no_create || (g_opt_decompress && g_opt_skip_zeroes && !is_zero_chunk)) {
             if (sequence * g_block_size != lseek(g_write_fd, sequence * g_block_size, SEEK_SET)) {
-                BACKY_LOG("seek error.\n");
+                BACKY_LOG("seek error (seek_set %lu).\n", sequence * g_block_size);
                 exit(1);
             }
         }
