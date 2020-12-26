@@ -19,8 +19,7 @@
 #include <stdarg.h>
 
 #define DEBUG_PREFIX "ld_rbd: "
-
-#include "rbd-backy.h"
+#include "rbd-parse.h"
 
 #define RBD_MAX_FD  255
 #define RBD_MAX_DIR  32
@@ -287,16 +286,37 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset)
     return real_write(fd, buf, count);
 }
 
+static int rbd_fstat_wrapper(struct rbd_fd_list *e, struct stat *buf) {
+    memset(buf, 0x00, sizeof(struct stat));
+    //TODO
+    buf->st_size = e->size;
+    buf->st_mode = S_IFREG;
+    buf->st_nlink = 1;
+    buf->st_blocks = (buf->st_size + 511) / 512;
+    buf->st_blksize = 4096;
+    return 0;
+}
+
 int (*real_fstat)(int fd, struct stat *buf);
 int fstat(int fd, struct stat *buf) {
     LD_DLSYM(real_fstat, fstat, "fstat");
     struct rbd_fd_list *e = is_rbd_fd(fd);
     if (e) {
         DPRINTF("fstat fd=%d", fd);
-        errno = ENOTSUP;
-        return -1;
+        return rbd_fstat_wrapper(e, buf);
     }
     return real_fstat(fd, buf);
+}
+
+int (*real_fxstat)(int ver, int fd, struct stat *buf) = NULL;
+int __fxstat(int ver, int fd, struct stat *buf) {
+    LD_DLSYM(real_fxstat, __fxstat, "__fxstat");
+    struct rbd_fd_list *e = is_rbd_fd(fd);
+    if (e) {
+        DPRINTF("__fxstat ver=%d fd=%d buf=%p", ver, fd, buf);
+        return rbd_fstat_wrapper(e, buf);
+    }
+    return real_fxstat(ver, fd, buf);
 }
 
 int (*real_fsync)(int fd) = NULL;
