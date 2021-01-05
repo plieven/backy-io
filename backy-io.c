@@ -697,12 +697,18 @@ write_compressed(void *arg)
         if (g_opt_update) {
             if (seq == g_block_count) break;
             if (memcmp(g_zeroblock, g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
-                dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-                fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count ? "," : "", seq, dedup_hash);
+                int print_hash = 1;
                 if (dedup_is_zero_chunk(&g_block_mapping[seq * DEDUP_MAC_SIZE_BYTES])) {
                     zeroblocks++;
+                    if (g_version >= 3) {
+                        print_hash = 0;
+                    }
                 } else {
                     dedup_existing++;
+                }
+                if (print_hash) {
+                    dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
+                    fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count ? "," : "", seq, dedup_hash);
                 }
                 seq++;
                 mapping_count++;
