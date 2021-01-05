@@ -8,7 +8,7 @@
 #include "rbd-parse.h"
 
 #define MAX_SNAPS 100
-#define SECURITY_SECS 300
+#define SECURITY_SECS 60
 
 struct rbd_connection {
     rados_t cluster;
