@@ -709,9 +709,9 @@ write_compressed(void *arg)
                 if (print_hash) {
                     dedup_hash_sprint(g_block_mapping + seq * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
                     fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count ? "," : "", seq, dedup_hash);
+                    mapping_count++;
                 }
                 seq++;
-                mapping_count++;
                 continue;
             }
         }
