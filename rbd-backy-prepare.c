@@ -6,7 +6,7 @@
 
 int main(int argc, char** argv) {
     int ret = 1;
-    long r, i, num_changed = 0, num_allocated = 0;
+    long r, i, num_changed = 0, num_allocated = 0, mapping_count = 0;
     struct rbd_connection conn = {0};
     struct timespec tstart={}, tend={};
     char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
@@ -138,14 +138,10 @@ int main(int argc, char** argv) {
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %lu,\n", conn.info.obj_size);
     fprintf(fp, " \"mapping\" : {");
-    if (conn.info.num_objs > 0) {
-        dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
-        fprintf(fp, "\"0\":\"%s\"", dedup_hash);
-    }
-    for (i = 1; i < conn.info.num_objs; i++) {
+    for (i = 0; i < conn.info.num_objs; i++) {
         if (g_version < 3 || !dedup_is_zero_chunk(&g_block_mapping[i * DEDUP_MAC_SIZE_BYTES])) {
             dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-            fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
+            fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count++ ? "," : "", i, dedup_hash);
         }
     }
     fprintf(fp, "},\n");

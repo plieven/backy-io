@@ -7,7 +7,8 @@
 
 int main(int argc, char** argv) {
     long i;
-    int ret, num_changed;
+    int ret;
+    long num_changed, mapping_count;
     char *input = NULL;
     char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
     FILE *log = stderr, *fp = NULL;
@@ -38,6 +39,7 @@ again:
     ret = 1;
     num_changed = 0;
     recovery_mode = 0;
+    mapping_count = 0;
     arg_path = arg_new = arg_old = arg_sw = NULL;
     if (interactive_mode) {
         enum { kMaxArgs = 64 };
@@ -164,7 +166,7 @@ again:
          }
     }
     if (!interactive_mode && qb->obj_count <= 1024) fprintf(log, "\n\n");
-    fprintf(log, "number of changed objects = %d\n", num_changed);
+    fprintf(log, "number of changed objects = %ld\n", num_changed);
 
     if (g_version > 2) {
         init_zero_block();
@@ -182,14 +184,10 @@ again:
     fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %u,\n", qb->obj_size);
     fprintf(fp, " \"mapping\" : {");
-    if (qb->obj_count > 0) {
-        dedup_hash_sprint(g_block_mapping, &dedup_hash[0]);
-        fprintf(fp, "\"0\":\"%s\"", dedup_hash);
-    }
-    for (i = 1; i < qb->obj_count; i++) {
+    for (i = 0; i < qb->obj_count; i++) {
         if (g_version < 3 || !dedup_is_zero_chunk(&g_block_mapping[i * DEDUP_MAC_SIZE_BYTES])) {
             dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-            fprintf(fp, ",\"%lu\":\"%s\"", i, dedup_hash);
+            fprintf(fp, "%s\"%lu\":\"%s\"", mapping_count++ ? "," : "", i, dedup_hash);
         }
     }
     fprintf(fp, "},\n");
