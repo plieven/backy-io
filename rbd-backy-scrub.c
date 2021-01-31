@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
 	}
 
 	for (i = 0; i < conn.info.num_objs; i++) {
-		if (OBJ_IS_ALLOCATED(errormap, i) && !OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
+		if (OBJ_IS_ALLOCATED(errormap, i) && OBJ_IS_ALLOCATED(conn.alloc_bitmap, i) && !OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
 			char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
 			fprintf(stderr, "FATAL ERROR: object #%lu failed checksum test, but is not marked as changed\n", i);
 			dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
@@ -70,7 +70,7 @@ int main(int argc, char** argv) {
 			ret = 2;
 			goto out;
 		}
-		if (OBJ_IS_ALLOCATED(errormap, i)) changed_csum++;
+		if (OBJ_IS_ALLOCATED(conn.alloc_bitmap, i) && OBJ_IS_ALLOCATED(errormap, i)) changed_csum++;
 		if (OBJ_IS_ALLOCATED(conn.change_bitmap, i)) changed_api++;
 	}
 
