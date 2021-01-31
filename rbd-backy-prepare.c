@@ -120,6 +120,12 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (conn.info.num_objs * conn.info.obj_size > conn.info.size) {
+        fprintf(stderr, "last object #%ld exceeds the end of image, forcefully setting it to changed\n", conn.info.num_objs - 1);
+        memset(g_block_mapping + (conn.info.num_objs - 1) * DEDUP_MAC_SIZE_BYTES, 0x00, DEDUP_MAC_SIZE_BYTES);
+        num_changed++;
+    }
+
     fprintf(stderr, "number of allocated objects = %ld\n", num_allocated);
     fprintf(stderr, "number of changed objects = %ld\n", num_changed);
     fprintf(stderr, "filesize is %lu bytes\n", conn.info.size);
