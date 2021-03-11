@@ -301,8 +301,10 @@ int file_exists(u_int8_t * filename, int report_not_found, int count)
         return 0;
     }
     if (st.st_size == 0) {
+        long age = time(NULL) - st.st_ctime;
         BACKY_LOG("ERR: chunk '%s' HAS ZERO SIZE (NOT FOUND!)\n", filename);
-        if (g_opt_delete_zero_byte_chunks) {
+        BACKY_LOG("INFO: chunk '%s' ctime %ld now %ld age %ld\n", filename, st.st_ctime, time(NULL), age);
+        if (g_opt_delete_zero_byte_chunks && age > 300) {
             BACKY_LOG("deleting zero byte chunk '%s'...\n", filename);
             vdie_if(unlink(filename) < 0, "unlink: %s", filename);
         }
@@ -1608,15 +1610,15 @@ main(int argc, char **argv)
         BACKY_LOG("operations:\n"
             " DECOMPRESS TO STDOUT: %s -d -i <infile.json> [-v] [-V] [-0|-s] [-m minthr] [-p maxthr] [-X chunkdir]\n"
             " DECOMPRESS TO FILE:   %s -d -i <infile.json> -o <outfile.raw> [-v] [-V] [-0|-s] [-Z|-n] [-m minthr] [-p maxthr] [-X chunkdir]\n"
-            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
-            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
-            " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
+            " COMPRESS FROM STDIN:  %s -c -o <outfile.json> [-v] [-0] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
+            " COMPRESS FROM FILE:   %s -c -i <infile.raw> -o <outfile.json> [-v] [-0] [-b <blkKB>] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
+            " UPDATE FROM FILE:     %s -u -i <infile.raw> -o <outfile.json> [-v] [-0] [-m minthr] [-p maxthr] [-X chunkdir] [-1]\n"
             " VERIFY SIMPLE:        %s -T -i <infile.json> [-v] [-0] [-X chunkdir]\n"
             " VERIFY DEEP:          %s -t -i <infile.json> [-v] [-V] [-0] [-m minthr] [-p maxthr] [-X chunkdir]\n\n"
             "options: \n"
             " -v verbose (repeat to increase verbosity)\n"
             " -V verify decompressed chunks\n"
-            " -0 delete zero byte chunks on decompress and verify\n"
+            " -0 delete zero byte chunks if they are detected and their ctime is more than 300 seconds ago\n"
             " -Z do not write zero chunks on decompress\n"
             " -n do not overwrite output file and skip 0x00 chunks\n"
             " -s skip verify_chunks before decompress if version 3\n"
