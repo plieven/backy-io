@@ -1287,10 +1287,17 @@ decompress(void *arg)
                 (unsigned char *) &(comp_bufp->buf),
                 (unsigned long *) &(comp_bufp->length),
                 NULL);
+            if (ret == -8) {
+                char hash[DEDUP_MAC_SIZE_BYTES];
+                char hash_c[DEDUP_MAC_SIZE_STR] = {};
+                mmh3(comp_bufp->buf, comp_bufp->length.val, 0, &hash[0]);
+                dedup_hash_sprint(&hash[0], hash_c);
+                BACKY_LOG("length %ld hash %s\n", comp_bufp->length.val, hash_c);
+            }
             if (ret != LZO_E_OK) {
                 BACKY_LOG(
-                    "lzo1x_decompress failed, "
-                "return     = %d\n", ret);
+                    "lzo1x_decompress of file %s failed, "
+                    "return     = %d\n", dedup_file, ret);
                 exit(1);
             }
             /*
