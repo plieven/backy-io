@@ -48,6 +48,9 @@ rbd-backy-scrub : rbd-backy-scrub.o $(EXT_OBJ)
 json-test : json-test.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) json-test.o $(LDFLAGS)
 
+chunktool : chunktool.o $(EXT_OBJ)
+	$(CC) -o $@ $(EXT_OBJ) chunktool.o $(LDFLAGS)
+
 debug : debug.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) debug.o $(LDFLAGS)
 
