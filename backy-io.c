@@ -778,6 +778,9 @@ write_compressed(void *arg)
 }
 //~ //~
 
+#define HEAP_ALLOC(var,size) \
+    lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
+
 /*
  * compress() - Runs as thread(s) started via pthread_create()
  */
@@ -787,15 +790,13 @@ compress(void *arg)
     vol_buf *bufp;
     vol_buf *comp_bufp;
     unsigned long sequence;
-    char *work_buf;
 #ifndef NDEBUG
     int blocks_compressed = 0;
 #endif
+    HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
     (void) increment(&g_compress_threads);
     /* Need to initialise work_buf */
-    work_buf = valloc(LZO1X_1_MEM_COMPRESS);
-    die_if(! work_buf, ESTR_MEMALIGN);
 
     /*CONSTCOND*/
     while (1) {
@@ -844,14 +845,19 @@ compress(void *arg)
                 comp_bufp->dedup_exists = file_exists(dedup_filename, 0, 0);
                 comp_bufp->is_compressed = 1;
 
-                if (!comp_bufp->dedup_exists)
-                 {
-                (void) lzo1x_1_compress(
+                if (!comp_bufp->dedup_exists) {
+                    int ret;
+                    ret = lzo1x_1_compress(
                     (unsigned char *) &(bufp->buf),
                     bufp->length.val,
                     (unsigned char *) &(comp_bufp->buf) + 5,
                     (unsigned long *) &(comp_bufp->length),
-                    work_buf);
+                    wrkmem);
+                    if (ret != LZO_E_OK) {
+                        BACKY_LOG("lzo1x_compress of chunk %lu failed, "
+                                  "return     = %d\n", bufp->seq, ret);
+                        exit(1);
+                    }
                     comp_bufp->is_compressed = 1;
                     comp_bufp->buf[0] = 0xf0;
                     comp_bufp->buf[1] = bufp->length.val >> 24;
@@ -908,7 +914,6 @@ compress(void *arg)
     set_last_block(&comp_q_dirty, in_q_dirty.last_block);
     if (in_q_dirty.last_block == sequence)
         wakeup(&comp_q_dirty);
-    free(work_buf);
 
     Tdebug2("+ compress() - return; tid = %d, blocks = %d\n",
         pthread_self, blocks_compressed);
@@ -1281,7 +1286,7 @@ decompress(void *arg)
             vdie_if_n(comp_bufp->length.val < 0 || bufp->length.val - 5 > comp_bufp->length.val + comp_bufp->length.val / 64 + 16 + 3, "lzo header error", 0);
             vdie_if_n(comp_bufp->length.val != expected_size, "lzo data has unexpected size (expected %lu found %lu)", expected_size, comp_bufp->length.val);
             /* Decompress */
-            ret = lzo1x_decompress(
+            ret = lzo1x_decompress_safe(
                 (const unsigned char *) &(bufp->buf) + 5,
                 bufp->length.val - 5,
                 (unsigned char *) &(comp_bufp->buf),
@@ -1296,7 +1301,7 @@ decompress(void *arg)
             }
             if (ret != LZO_E_OK) {
                 BACKY_LOG(
-                    "lzo1x_decompress of file %s failed, "
+                    "lzo1x_decompress_safe of file %s failed, "
                     "return     = %d\n", dedup_file, ret);
                 exit(1);
             }
