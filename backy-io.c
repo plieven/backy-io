@@ -335,14 +335,20 @@ void dedup_hash_mkdir(u_int8_t * hash)
       dedup_mkdir(dir);
 }
 
-void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash, int compressed)
+void dedup_hash_filename(u_int8_t * filename, u_int8_t * hash, int compressed, int temp)
 {
     int i;
+    char *suffix = ".chunk.lzo";
     snprintf(filename,DEDUP_HASH_FILENAME_MAX, "%s/%02x/%02x/", g_chunk_dir, hash[0], hash[1]);
     for (i=0; i < DEDUP_MAC_SIZE_BYTES;i++) {
         sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, "%02x", hash[i]);
     }
-    sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, compressed ? ".chunk.lzo" : ".chunk");
+    if (temp) {
+        suffix = ".XXXXXX";
+    } else if (!compressed) {
+        suffix = ".chunk";
+    }
+    sprintf(filename + i * 2 + strlen(g_chunk_dir) + 2 * 3 + 1, "%s", suffix);
 }
 
 static vol_buf *
@@ -841,7 +847,7 @@ compress(void *arg)
             mmh3(&(bufp->buf), bufp->length.val, 0, &comp_bufp->hash[0]);
             comp_bufp->is_zero = dedup_is_zero_chunk(&comp_bufp->hash[0]);
             if (!comp_bufp->is_zero || g_version == 1) {
-                dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1);
+                dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1, 0);
                 comp_bufp->dedup_exists = file_exists(dedup_filename, 0, 0);
                 comp_bufp->is_compressed = 1;
 
@@ -885,24 +891,23 @@ compress(void *arg)
             int g_write_fd_dedup;
             ssize_t bytes;
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
-            dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], comp_bufp->is_compressed);
+            uint8_t temp_filename[DEDUP_HASH_FILENAME_MAX];
+            dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], comp_bufp->is_compressed, 0);
+            dedup_hash_filename(temp_filename, &comp_bufp->hash[0], comp_bufp->is_compressed, 1);
             dedup_hash_mkdir(comp_bufp->hash);
-            g_write_fd_dedup = open(dedup_filename,
-              O_WRONLY | O_LARGEFILE | O_CREAT | O_EXCL, 0666);
-            if (g_write_fd_dedup < 0) {
-                if (errno != EEXIST) {
-                    vdie_if(1,"dedup chunk write: %s", dedup_filename);
-                }
-                BACKY_LOG("dedup write collision: %s\n", dedup_filename);
-                comp_bufp->dedup_exists = 1;
-            } else {
-                bytes = write(g_write_fd_dedup, &(comp_bufp->buf), comp_bufp->length.val);
-                close(g_write_fd_dedup);
-                if (bytes < 0) {
-                    unlink(dedup_filename);
-                }
+
+            g_write_fd_dedup = mkstemp((char *) &temp_filename);
+            vdie_if(g_write_fd_dedup < 0, "dedup temp chunk write: %s", temp_filename);
+            bytes = write(g_write_fd_dedup, &(comp_bufp->buf), comp_bufp->length.val);
+            close(g_write_fd_dedup);
+
+            if (bytes < 0 || bytes != comp_bufp->length.val) {
+                unlink(temp_filename);
                 die_if(bytes < 0, ESTR_WRITE);
+                vdie_if_n(bytes != comp_bufp->length.val, "partial write in temp chunk file (only %ld of %ld bytes): %s", bytes, comp_bufp->length.val, temp_filename);
             }
+            vdie_if(rename(temp_filename, dedup_filename) < 0,
+                    "atomic temp chunk rename %s to %s failed", temp_filename, dedup_filename);
         }
         put_last(&comp_q_dirty, comp_bufp);
 
@@ -1260,11 +1265,11 @@ decompress(void *arg)
         int read_fd_dedup;
         u_int8_t dedup_file[DEDUP_HASH_FILENAME_MAX];
         dedup_hash_filename(dedup_file, g_block_mapping + bufp->seq * DEDUP_MAC_SIZE_BYTES,
-                            g_version != 2 || g_block_is_compressed[bufp->seq]);
+                            g_version != 2 || g_block_is_compressed[bufp->seq], 0);
         vdie_if((read_fd_dedup = open(dedup_file,
                 O_RDONLY)) < 0,
                 "open: %s", dedup_file);
-        die_if((bufp->length.val = read(read_fd_dedup,(void *)&(bufp->buf), bufp->bytes)) < 0,ESTR_FREAD);
+        die_if((bufp->length.val = read(read_fd_dedup,(void *)&(bufp->buf), bufp->bytes)) < 0,ESTR_FREAD); //XXX: the read might be interrupted here
         close(read_fd_dedup);
         g_in_bytes += bufp->length.val;
         if (g_opt_verbose > 1) {
@@ -1339,7 +1344,7 @@ void verify_chunks() {
         uint8_t dedup_exists;
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
         if ((g_opt_update || g_opt_no_create) && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
-        dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1);
+        dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1, 0);
         dedup_exists = file_exists(chunk_file, 0, 1);
         if (g_version == 2) {
             assert(g_block_is_compressed);
@@ -1347,12 +1352,12 @@ void verify_chunks() {
         }
         if (!dedup_exists) {
             if (g_version == 2) {
-                dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
+                dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0, 0);
                 dedup_exists = file_exists(chunk_file, 1, 1);
                 g_block_is_compressed[i] = 0;
             }
         } else if (g_opt_delete_zero_byte_chunks) {
-            dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0);
+            dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 0, 0);
             if (file_exists(chunk_file, 0, 0)) {
                 BACKY_LOG("INFO: chunk '%s' coexists with its compressed version!\n", chunk_file);
                 BACKY_LOG("deleting chunk '%s'...\n", chunk_file);
