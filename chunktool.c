@@ -36,12 +36,13 @@ int main(int argc, char** argv) {
             (unsigned char *) buf2,
             (unsigned long *) &buf2_size,
             NULL);
-        if (ret != LZO_E_OK && ret != -8) {
+        ret = -ret;
+        if (ret != LZO_E_OK && ret != 8) {
             fprintf(stderr, "lzo1x_decompress failed, return     = %d\n", ret);
+            fprintf(stderr, "buf2_size = %lu\n", buf2_size);
             goto out;
-        } else if (ret == -8) {
+        } else if (ret == 8) {
             fprintf(stderr, "WARN: input not consumed\n");
-            ret = 0;
         }
         char hash[DEDUP_MAC_SIZE_BYTES];
         char hash_c[DEDUP_MAC_SIZE_STR] = {};
