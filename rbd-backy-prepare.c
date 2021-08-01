@@ -158,6 +158,7 @@ int main(int argc, char** argv) {
         fprintf(fp, "  \"rbd_id\": \"%s\",\n", conn.id);
         if (conn.snap_id) {
             fprintf(fp, "  \"rbd_snap_timestamp\": %ld,\n", conn.snap_timestamp.tv_sec);
+            fprintf(fp, "  \"rbd_snap_name\": \"%s\",\n", conn.snap_name);
         }
         fprintf(fp, "  \"rbd_snap_id\": %lu\n", conn.snap_id);
         fprintf(fp, " },\n");

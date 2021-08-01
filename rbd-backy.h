@@ -21,6 +21,7 @@ struct rbd_connection {
     uint64_t stripe_unit;
     uint64_t stripe_count;
     uint64_t snap_id;
+    char *snap_name;
     struct timespec snap_timestamp;
     size_t bitmap_sz;
     char *alloc_bitmap;
@@ -87,6 +88,7 @@ static int backy_rbd_connect(const char *path, struct rbd_connection *conn) {
             if (snaps[i].id && !strcmp(snap, snaps[i].name)) {
                 assert(!conn->snap_id);
                 conn->snap_id = snaps[i].id;
+                conn->snap_name = strdup(snap);
             }
         }
         assert(conn->snap_id);
@@ -110,6 +112,7 @@ static void backy_rbd_disconnect(struct rbd_connection *conn) {
     if (conn->cluster) {
         rados_shutdown(conn->cluster);
     }
+    free(conn->snap_name);
     memset(conn, 0x0, sizeof(struct rbd_connection));
 }
 
