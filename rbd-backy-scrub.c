@@ -12,9 +12,15 @@ int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
     long i = offs >> conn.info.order;
     assert(len == conn.info.obj_size);
     assert(!(offs & (conn.info.obj_size - 1)));
-    mmh3(buf, len, 0, &h[0]);
-    if (memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
-        OBJ_SET_ALLOCATED(errormap, i);
+    if (!buf || !memcmp(g_zeroblock, buf, len)) {
+        if (!dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) {
+            OBJ_SET_ALLOCATED(errormap, i);
+        }
+    } else {
+        mmh3(buf, len, 0, &h[0]);
+        if (memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+            OBJ_SET_ALLOCATED(errormap, i);
+        }
     }
     fprintf(stderr, "progress: %lu bytes read\n", offs + len);
     return 0;
@@ -63,6 +69,8 @@ int main(int argc, char** argv) {
 
 	errormap = calloc(1, conn.bitmap_sz);
 	assert(errormap);
+
+    init_zero_block();
 
     clock_gettime(CLOCK_MONOTONIC, &tstart);
     ret = rbd_read_iterate2(conn.image, 0, conn.info.size, read_cb, NULL);
