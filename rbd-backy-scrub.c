@@ -4,12 +4,26 @@
 
 #include "rbd-backy.h"
 
+char *errormap = NULL;
+struct rbd_connection conn = {0};
+
+int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
+    char h[DEDUP_MAC_SIZE_BYTES];
+    long i = offs >> conn.info.order;
+    assert(len == conn.info.obj_size);
+    assert(!(offs & (conn.info.obj_size - 1)));
+    mmh3(buf, len, 0, &h[0]);
+    if (memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+        OBJ_SET_ALLOCATED(errormap, i);
+    }
+    fprintf(stderr, "progress: %lu bytes read\n", offs + len);
+    return 0;
+}
+
 int main(int argc, char** argv) {
 	int ret = 1;
 	long changed_api = 0, changed_csum = 0;
 	long i;
-	struct rbd_connection conn = {0};
-	char *errormap = NULL;
     time_t since = 0;
     char *old_snap_name = NULL;
     struct timespec tstart={}, tend={};
@@ -50,25 +64,13 @@ int main(int argc, char** argv) {
 	errormap = calloc(1, conn.bitmap_sz);
 	assert(errormap);
 
-	char *buf = malloc(conn.info.obj_size);
-	char h[DEDUP_MAC_SIZE_BYTES];
-	assert(buf);
-    //TODO: use rbd_read_iterate2 ?
     clock_gettime(CLOCK_MONOTONIC, &tstart);
-	for (i = 0; i < conn.info.num_objs; i++) {
-        ret = rbd_read(conn.image, i * conn.info.obj_size, conn.info.obj_size, buf);
-		assert(ret >= 0);
-		fprintf(stderr, "progress: %lu bytes read\n", i * conn.info.obj_size);
-		mmh3(buf, ret, 0, &h[0]);
-		if (memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
-			OBJ_SET_ALLOCATED(errormap, i);
-		}
-	}
+    ret = rbd_read_iterate2(conn.image, 0, conn.info.size, read_cb, NULL);
     clock_gettime(CLOCK_MONOTONIC, &tend);
     fprintf(stderr, "rbd_backy_scrub (read of complete image) took about %.5f seconds\n",
            ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
            ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
-	free(buf);
+    assert(ret >= 0);
 
     if (old_snap_name) {
         if (backy_rbd_changed_objs_from_snap(&conn, old_snap_name) < 0) {
