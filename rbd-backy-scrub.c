@@ -11,6 +11,8 @@ int main(int argc, char** argv) {
 	struct rbd_connection conn = {0};
 	char *errormap = NULL;
     time_t since = 0;
+    char *old_snap_name = NULL;
+    struct timespec tstart={}, tend={};
 
 	if (argc != 3) {
 		fprintf(stderr, "Usage: %s <rbd-path> <backy-json>\n", argv[0]);
@@ -30,7 +32,12 @@ int main(int argc, char** argv) {
         goto out;
     }
 
-    if (rbd_parse_json(&conn, arg_old, &since)) {
+    if (rbd_parse_json(&conn, arg_old, &since, &old_snap_name)) {
+        goto out;
+    }
+    if (!since) {
+        fprintf(stderr, "SKIP: could not parse ts of old_snapshot\n");
+        ret = 3;
         goto out;
     }
 
@@ -46,6 +53,8 @@ int main(int argc, char** argv) {
 	char *buf = malloc(conn.info.obj_size);
 	char h[DEDUP_MAC_SIZE_BYTES];
 	assert(buf);
+    //TODO: use rbd_read_iterate2 ?
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
 	for (i = 0; i < conn.info.num_objs; i++) {
         ret = rbd_read(conn.image, i * conn.info.obj_size, conn.info.obj_size, buf);
 		assert(ret >= 0);
@@ -55,13 +64,24 @@ int main(int argc, char** argv) {
 			OBJ_SET_ALLOCATED(errormap, i);
 		}
 	}
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(stderr, "rbd_backy_scrub (read of complete image) took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
 	free(buf);
 
-	if (backy_rbd_changed_objs(&conn, since) < 0) {
-		goto out;
-	}
+    if (old_snap_name) {
+        if (backy_rbd_changed_objs_from_snap(&conn, old_snap_name) < 0) {
+            goto out;
+        }
+    } else {
+        if (backy_rbd_changed_objs(&conn, since) < 0) {
+            goto out;
+        }
+    }
 
 	for (i = 0; i < conn.info.num_objs; i++) {
+        //TODO: refactor first 2 ifs
 		if (OBJ_IS_ALLOCATED(errormap, i) && OBJ_IS_ALLOCATED(conn.alloc_bitmap, i) && !OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
 			char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
 			fprintf(stderr, "FATAL ERROR: object #%lu failed checksum test, but is not marked as changed\n", i);
@@ -81,6 +101,7 @@ int main(int argc, char** argv) {
 out:
     g_free();
     free(errormap);
+    free(old_snap_name);
     backy_rbd_disconnect(&conn);
     exit(ret);
 }

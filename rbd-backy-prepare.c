@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         size_changed = 1;
     }
 
-    r = backy_rbd_changed_objs(&conn, since);
+    r = backy_rbd_changed_objs(&conn, since, NULL);
     assert (r>=0);
 
     init_zero_block();

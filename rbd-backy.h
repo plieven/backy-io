@@ -79,6 +79,7 @@ static int backy_rbd_connect(const char *path, struct rbd_connection *conn) {
     assert(r >= 0);
 
     if (snap) {
+        //TODO: from octopus on we can use rbd_snap_get_id here
         int max_snaps = MAX_SNAPS, i;
         rbd_snap_info_t  snaps[MAX_SNAPS];
         r = rbd_snap_list(conn->image, &snaps[0], &max_snaps);
@@ -123,11 +124,15 @@ static int backy_rbd_diff_cb(uint64_t offs, size_t len, int exists, void* opaque
     if (exists) {
         OBJ_SET_ALLOCATED(conn->alloc_bitmap, offs / conn->info.obj_size);
         OBJ_SET_ALLOCATED(conn->change_bitmap, offs / conn->info.obj_size);
+    } else {
+        assert(!OBJ_IS_ALLOCATED(conn->alloc_bitmap, offs / conn->info.obj_size));
+        assert(!OBJ_IS_ALLOCATED(conn->change_bitmap, offs / conn->info.obj_size));
     }
     return 0;
 }
 
 static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since) {
+    struct timespec tstart={}, tend={};
     long ret = -1;
     unsigned int i;
     int r;
@@ -143,11 +148,18 @@ static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since) {
     memset(conn->change_bitmap, 0x00, conn->bitmap_sz);
 
     /* fill bitmap with allocated clusters */
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
     r = rbd_diff_iterate2(conn->image, NULL, 0, conn->info.size, true, true, backy_rbd_diff_cb, conn);
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(stderr, "backy_rbd_changed_objs (rbd_diff_iterate2) took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
     assert(r >= 0);
 
     if (since) {
         assert(conn->info.num_objs <= UINT_MAX);
+        clock_gettime(CLOCK_MONOTONIC, &tstart);
+
         if (conn->snap_id) {
             rados_ioctx_snap_set_read(conn->io_ctx, conn->snap_id);
         }
@@ -169,6 +181,11 @@ static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since) {
         if (conn->snap_id) {
             rados_ioctx_snap_set_read(conn->io_ctx, LIBRADOS_SNAP_HEAD);
         }
+        clock_gettime(CLOCK_MONOTONIC, &tend);
+        fprintf(stderr, "backy_rbd_changed_objs (rados_stat since %ld) took about %.5f seconds\n", since,
+               ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+               ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+        fflush(stderr);
     }
 
     ret = 0;
@@ -177,11 +194,67 @@ static long backy_rbd_changed_objs(struct rbd_connection *conn, time_t since) {
             ret++;
         }
     }
-    
+
     return ret;
 }
 
-static int rbd_parse_json(struct rbd_connection *conn, char *path, time_t *since) {
+static long backy_rbd_changed_objs_from_snap(struct rbd_connection *conn, char *old_snap_name) {
+    struct timespec tstart={}, tend={};
+    long ret = -1;
+    unsigned int i;
+    int r;
+
+    memset(conn->alloc_bitmap, 0x00, conn->bitmap_sz);
+    memset(conn->change_bitmap, 0x00, conn->bitmap_sz);
+
+    /* fill bitmap with allocated clusters */
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
+    r = rbd_diff_iterate2(conn->image, NULL, 0, conn->info.size, true, true, backy_rbd_diff_cb, conn);
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(stderr, "backy_rbd_changed_objs_from_snap (rbd_diff_iterate2) took about %.5f seconds\n",
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+    assert(r >= 0);
+
+    /* fill bitmap with changed clusters */
+    memset(conn->change_bitmap, 0x00, conn->bitmap_sz);
+    clock_gettime(CLOCK_MONOTONIC, &tstart);
+    r = rbd_diff_iterate2(conn->image, old_snap_name, 0, conn->info.size, true, true, backy_rbd_diff_cb, conn);
+    clock_gettime(CLOCK_MONOTONIC, &tend);
+    fprintf(stderr, "backy_rbd_changed_objs_from_snap (rbd_diff_iterate2 from snap %s) took about %.5f seconds\n", old_snap_name,
+           ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) -
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec));
+    assert(r >= 0);
+
+    ret = 0;
+    for (i = 0; i < conn->info.num_objs; i++) {
+        if (OBJ_IS_ALLOCATED(conn->change_bitmap, i)) {
+            ret++;
+        }
+    }
+
+    return ret;
+}
+
+//TODO: from octopus on we can use builtin rbd_snap_exists here
+static int rbd_snap_exists(rbd_image_t image, const char *snapname, bool *exists) {
+    int max_snaps = MAX_SNAPS, i;
+    rbd_snap_info_t  snaps[MAX_SNAPS];
+
+    *exists = false;
+    int r = rbd_snap_list(image, &snaps[0], &max_snaps);
+    if (r < 0) {
+        return r;
+    }
+    assert(max_snaps == MAX_SNAPS);
+    for (i = 0; i < max_snaps; i++) {
+        if (snaps[i].id && !strcmp(snapname, snaps[i].name)) {
+            *exists = true;
+        }
+    }
+}
+
+static int rbd_parse_json(struct rbd_connection *conn, char *path, time_t *snap_timestamp, char **snap_name) {
 	int i, ret = 1;
 	struct timespec tstart={}, tend={};
 	json_value* value = NULL;
@@ -230,7 +303,19 @@ static int rbd_parse_json(struct rbd_connection *conn, char *path, time_t *since
 			vgotoout_if_n(val->u.string.length != strlen(&conn->fsid[0]) || strncmp(&conn->fsid[0], val->u.string.ptr, strlen(&conn->fsid[0])), "rados_cluster_fsid in metadata does not match!", 0);
 		} else if (!strcmp(name, "rbd_snap_timestamp")) {
 			vgotoout_if_n(val->type != json_integer, "json parser error: rbd_snap_timestamp has unexpected type (%d)", val->type);
-            *since = val->u.integer;
+            *snap_timestamp = val->u.integer;
+        } else if (!strcmp(name, "rbd_snap_name")) {
+            bool snap_exists;
+            vgotoout_if_n(val->type != json_string, "json parser error: rbd_snap_name has unexpected type (%d)", val->type);
+            if (snap_name) {
+                /* check if snapshot still exists */
+                int r = rbd_snap_exists(conn->image, val->u.string.ptr, &snap_exists);
+                assert(r >= 0);
+                if (snap_exists) {
+                    fprintf(stderr, "parse_json rbd_snap_name '%s' sill exists on cluster!\n", val->u.string.ptr);
+                    *snap_name = strdup(val->u.string.ptr);
+                }
+            }
         } else {
             fprintf(stderr, "cannot handle metadata: %s\n", name);
         }
