@@ -80,19 +80,23 @@ int main(int argc, char** argv) {
         }
     }
 
-	for (i = 0; i < conn.info.num_objs; i++) {
-        //TODO: refactor first 2 ifs
-		if (OBJ_IS_ALLOCATED(errormap, i) && OBJ_IS_ALLOCATED(conn.alloc_bitmap, i) && !OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
-			char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
-			fprintf(stderr, "FATAL ERROR: object #%lu failed checksum test, but is not marked as changed\n", i);
-			dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
-			fprintf(stderr, "FATAL ERROR: object #%lu hash on backup: %s\n", i, dedup_hash);
-			ret = 2;
-			goto out;
-		}
-		if (OBJ_IS_ALLOCATED(conn.alloc_bitmap, i) && OBJ_IS_ALLOCATED(errormap, i)) changed_csum++;
-		if (OBJ_IS_ALLOCATED(conn.change_bitmap, i)) changed_api++;
-	}
+    for (i = 0; i < conn.info.num_objs; i++) {
+        if (OBJ_IS_ALLOCATED(conn.alloc_bitmap, i) && OBJ_IS_ALLOCATED(errormap, i)) {
+            if (!OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
+                char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
+                fprintf(stderr, "FATAL ERROR: object #%lu failed checksum test, but is not marked as changed\n", i);
+                dedup_hash_sprint(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, &dedup_hash[0]);
+                fprintf(stderr, "FATAL ERROR: object #%lu hash on backup: %s\n", i, dedup_hash);
+                ret = 2;
+                goto out;
+            } else {
+                changed_csum++;
+            }
+        }
+        if (OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
+            changed_api++;
+        }
+    }
 
 	fprintf(stderr, "SUCCESS: all objects passed scrubbing test. changed_api: %lu changed_csum: %lu\n", changed_api, changed_csum);
 

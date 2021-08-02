@@ -312,7 +312,7 @@ static int rbd_parse_json(struct rbd_connection *conn, char *path, time_t *snap_
                 int r = rbd_snap_exists(conn->image, val->u.string.ptr, &snap_exists);
                 assert(r >= 0);
                 if (snap_exists) {
-                    fprintf(stderr, "parse_json rbd_snap_name '%s' sill exists on cluster!\n", val->u.string.ptr);
+                    fprintf(stderr, "parse_json rbd_snap_name '%s' still exists on cluster!\n", val->u.string.ptr);
                     *snap_name = strdup(val->u.string.ptr);
                 }
             }
