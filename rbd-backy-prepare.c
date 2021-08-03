@@ -45,9 +45,8 @@ int main(int argc, char** argv) {
 
     if (argc > 4 && arg_sw) {
         if (!strcmp(arg_sw, "-t")) {
-            since = 0;
-            free(old_snap_name);
-            old_snap_name = NULL;
+            ret = 0;
+            goto out;
         } else if (!strcmp(arg_sw, "-r")) {
             recovery_mode = 1;
         } else {
