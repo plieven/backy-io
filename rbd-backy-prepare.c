@@ -10,6 +10,7 @@ int main(int argc, char** argv) {
     struct rbd_connection conn = {0};
     struct timespec tstart={}, tend={};
     char dedup_hash[DEDUP_MAC_SIZE_STR] = {};
+    char *old_snap_name = NULL;
     int recovery_mode = 0;
     int size_changed = 0;
     FILE *fp;
@@ -33,7 +34,7 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 3 && arg_old) {
-        if (rbd_parse_json(&conn, arg_old, &since)) {
+        if (rbd_parse_json(&conn, arg_old, &since, &old_snap_name)) {
             goto out;
         }
         fprintf(stderr, "old snapshot was created: %ld\n", since);
@@ -45,6 +46,8 @@ int main(int argc, char** argv) {
     if (argc > 4 && arg_sw) {
         if (!strcmp(arg_sw, "-t")) {
             since = 0;
+            free(old_snap_name);
+            old_snap_name = NULL;
         } else if (!strcmp(arg_sw, "-r")) {
             recovery_mode = 1;
         } else {
@@ -83,7 +86,11 @@ int main(int argc, char** argv) {
         size_changed = 1;
     }
 
-    r = backy_rbd_changed_objs(&conn, since, NULL);
+    if (old_snap_name && !recovery_mode) {
+        r = backy_rbd_changed_objs_from_snap(&conn, old_snap_name);
+    } else {
+        r = backy_rbd_changed_objs(&conn, since);
+    }
     assert (r>=0);
 
     init_zero_block();
@@ -176,6 +183,7 @@ int main(int argc, char** argv) {
 
 out:
     backy_rbd_disconnect(&conn);
+    free(old_snap_name);
     g_free();
     exit(ret);
 }
