@@ -5,6 +5,7 @@
 #include "rbd-backy.h"
 
 char *errormap = NULL;
+char *zeromap = NULL;
 struct rbd_connection conn = {0};
 
 #pragma GCC push_options
@@ -44,6 +45,7 @@ int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
     assert(len == conn.info.obj_size);
     assert(!(offs & (conn.info.obj_size - 1)));
     if (!buf || buffer_zero_avx512(buf, len)) {
+        OBJ_SET_ALLOCATED(zeromap, i);
         if (!dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) {
             OBJ_SET_ALLOCATED(errormap, i);
         }
@@ -59,7 +61,7 @@ int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
 
 int main(int argc, char** argv) {
 	int ret = 1;
-	long changed_api = 0, changed_csum = 0;
+	long changed_api = 0, changed_csum = 0, zero_blocks = 0, unallocated_blocks = 0;
 	long i;
     time_t since = 0;
     char *old_snap_name = NULL;
@@ -101,6 +103,9 @@ int main(int argc, char** argv) {
 	errormap = calloc(1, conn.bitmap_sz);
 	assert(errormap);
 
+	zeromap = calloc(1, conn.bitmap_sz);
+	assert(zeromap);
+
     init_zero_block();
 
     clock_gettime(CLOCK_MONOTONIC, &tstart);
@@ -134,12 +139,23 @@ int main(int argc, char** argv) {
                 changed_csum++;
             }
         }
+        if (!OBJ_IS_ALLOCATED(conn.alloc_bitmap, i)) {
+            unallocated_blocks++;
+            if (!OBJ_IS_ALLOCATED(zeromap, i) && !OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
+                fprintf(stderr, "FATAL ERROR: object #%lu is not allocated, but did not read as zero\n", i);
+                ret = 2;
+                goto out;
+            }
+        }
+        if (OBJ_IS_ALLOCATED(zeromap, i)) {
+            zero_blocks++;
+        }
         if (OBJ_IS_ALLOCATED(conn.change_bitmap, i)) {
             changed_api++;
         }
     }
 
-	fprintf(stderr, "SUCCESS: all objects passed scrubbing test. changed_api: %lu changed_csum: %lu\n", changed_api, changed_csum);
+	fprintf(stderr, "SUCCESS: all objects passed scrubbing test. changed_api: %lu changed_csum: %lu unallocated: %lu read_zero: %lu total: %lu\n", changed_api, changed_csum, unallocated_blocks, zero_blocks, conn.info.num_objs);
 
 	ret = 0;
 
