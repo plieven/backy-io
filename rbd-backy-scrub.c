@@ -7,12 +7,43 @@
 char *errormap = NULL;
 struct rbd_connection conn = {0};
 
+#pragma GCC push_options
+#pragma GCC target("avx512f")
+#include <immintrin.h>
+#define unlikely(x)     __builtin_expect((x),0)
+
+static bool
+buffer_zero_avx512(const void *buf, size_t len)
+{
+    /* Begin with an unaligned head of 64 bytes.  */
+    __m512i t = _mm512_loadu_si512(buf);
+    __m512i *p = (__m512i *)(((uintptr_t)buf + 5 * 64) & -64);
+    __m512i *e = (__m512i *)(((uintptr_t)buf + len) & -64);
+
+    /* Loop over 64-byte aligned blocks of 256.  */
+    while (p <= e) {
+        __builtin_prefetch(p);
+        if (unlikely(_mm512_test_epi64_mask(t, t))) {
+            return false;
+        }
+        t = p[-4] | p[-3] | p[-2] | p[-1];
+        p += 4;
+    }
+
+    t |= _mm512_loadu_si512(buf + len - 4 * 64);
+    t |= _mm512_loadu_si512(buf + len - 3 * 64);
+    t |= _mm512_loadu_si512(buf + len - 2 * 64);
+    t |= _mm512_loadu_si512(buf + len - 1 * 64);
+
+    return !_mm512_test_epi64_mask(t, t);
+}
+
 int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
     char h[DEDUP_MAC_SIZE_BYTES];
     long i = offs >> conn.info.order;
     assert(len == conn.info.obj_size);
     assert(!(offs & (conn.info.obj_size - 1)));
-    if (!buf || !memcmp(g_zeroblock, buf, len)) {
+    if (!buf || buffer_zero_avx512(buf, len)) {
         if (!dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) {
             OBJ_SET_ALLOCATED(errormap, i);
         }
