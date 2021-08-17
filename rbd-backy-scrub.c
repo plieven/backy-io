@@ -42,8 +42,8 @@ buffer_zero_avx512(const void *buf, size_t len)
 int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
     char h[DEDUP_MAC_SIZE_BYTES];
     long i = offs >> conn.info.order;
-    assert(len == conn.info.obj_size);
     assert(!(offs & (conn.info.obj_size - 1)));
+    assert(len == conn.info.obj_size || len == conn.info.size - offs);
     if (!buf || buffer_zero_avx512(buf, len)) {
         OBJ_SET_ALLOCATED(zeromap, i);
         if (!dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) {
