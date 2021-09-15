@@ -30,15 +30,6 @@ backy-io-test : backy-io.o $(EXT_OBJ)
 backy-estimate : backy-estimate.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) backy-estimate.o $(LDFLAGS)
 
-quobyte-backy-prepare : quobyte-backy-prepare.o $(EXT_OBJ)
-	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-prepare.o $(LDFLAGS) -lquobyte -lreadline
-
-quobyte-backy-scrub : quobyte-backy-scrub.o $(EXT_OBJ)
-	$(CC) -o $@ $(EXT_OBJ) quobyte-backy-scrub.o $(LDFLAGS) -lquobyte -lreadline
-
-quobyte-getfattr : quobyte-getfattr.o $(EXT_OBJ)
-	$(CC) -o $@ $(EXT_OBJ) quobyte-getfattr.o $(LDFLAGS) -lquobyte
-
 rbd-backy-prepare : rbd-backy-prepare.o $(EXT_OBJ)
 	$(CC) -o $@ $(EXT_OBJ) rbd-backy-prepare.o $(LDFLAGS) -lrbd -lrados
 
