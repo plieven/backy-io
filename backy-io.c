@@ -1270,6 +1270,9 @@ decompress(void *arg)
                 O_RDONLY)) < 0,
                 "open: %s", dedup_file);
         die_if((bufp->length.val = read(read_fd_dedup,(void *)&(bufp->buf), bufp->bytes)) < 0,ESTR_FREAD); //XXX: the read might be interrupted here
+        if (g_opt_verify) {
+            posix_fadvise(read_fd_dedup, 0, 0, POSIX_FADV_DONTNEED);
+        }
         close(read_fd_dedup);
         g_in_bytes += bufp->length.val;
         if (g_opt_verbose > 1) {
