@@ -151,6 +151,7 @@ static int g_opt_skip_zeroes = 0;       /* Skip zeroes on decompress */
 static int g_opt_skip_verify = 0;       /* Skip verify chunks before decompress */
 static int g_opt_no_create   = 0;       /* Do not create output file on decompress, skip 0x00 chunks */
 static int g_opt_delete_zero_byte_chunks = 0;        /* delete zero byte chunks on verify */
+static int g_opt_interactive_progress = 0;        /* overwrite progress output with \r */
 
 static vol_int g_compress_threads;
 static vol_int g_comp_idle;         /* Zero IFF all (de)compress threads */
@@ -1034,9 +1035,9 @@ compress_fd(int fd)
 
         if (g_opt_verbose) {
             if (g_opt_update) {
-                BACKY_LOG("progress: %lu blocks processed.\n", g_blocks_processed);
+                BACKY_LOG("progress: %lu blocks processed.%s", g_blocks_processed, g_opt_interactive_progress ? "\r" : "\n");
             } else {
-                BACKY_LOG("progress: %lu bytes processed.\n", g_in_bytes);
+                BACKY_LOG("progress: %lu bytes processed.%s", g_in_bytes, g_opt_interactive_progress ? "\r" : "\n");
             }
         }
 
@@ -1185,9 +1186,9 @@ write_decompressed(void *arg)
 
         if (g_opt_verbose) {
             if (g_opt_no_create) {
-                BACKY_LOG("progress: %lu blocks processed.\n", g_blocks_processed);
+                BACKY_LOG("progress: %lu blocks processed.%s", g_blocks_processed, g_opt_interactive_progress ? "\r" : "\n");
             } else {
-                BACKY_LOG("progress: %lu bytes processed.\n", g_out_bytes);
+                BACKY_LOG("progress: %lu bytes processed.%s", g_out_bytes, g_opt_interactive_progress ? "\r" : "\n");
             }
         }
 
@@ -1525,7 +1526,7 @@ main(int argc, char **argv)
     /* Default maximum threads */
     g_max_threads = sysconf(_SC_NPROCESSORS_ONLN);
 
-    while ((c = getopt(argc, argv, "1VtTZdvcun0si:o:b:p:m:X:")) != -1) {
+    while ((c = getopt(argc, argv, "1VtTZdvcuIn0si:o:b:p:m:X:")) != -1) {
         switch (c) {
         case '0':
             g_opt_delete_zero_byte_chunks = 1;
@@ -1563,6 +1564,9 @@ main(int argc, char **argv)
             break;
         case 'u':
             g_opt_update = 1;
+            break;
+        case 'I':
+            g_opt_interactive_progress = 1;
             break;
         case 'i':
             /* Input file specified */
