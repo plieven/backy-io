@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
 
     fprintf(fp, "{\n");
     fprintf(fp, " \"version\" : %d,\n", g_version);
-    fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
+    fprintf(fp, " \"hash\" : \"%s\",\n", g_use_xxh3_128 ? DEDUP_MAC_NAME_XXH3 : DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %lu,\n", conn.info.obj_size);
     fprintf(fp, " \"mapping\" : {");
     for (i = 0; i < conn.info.num_objs; i++) {

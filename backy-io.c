@@ -696,7 +696,7 @@ write_compressed(void *arg)
 
     fprintf(fp, "{\n");
     fprintf(fp, " \"version\" : %d,\n", g_version);
-    fprintf(fp, " \"hash\" : \"%s\",\n", DEDUP_MAC_NAME);
+    fprintf(fp, " \"hash\" : \"%s\",\n", g_use_xxh3_128 ? DEDUP_MAC_NAME_XXH3 : DEDUP_MAC_NAME);
     fprintf(fp, " \"blocksize\" : %u,\n", g_block_size);
     fprintf(fp, " \"mapping\" : {");
 
@@ -845,7 +845,12 @@ compress(void *arg)
 
         if (bufp->length.val > 0) {
             uint8_t dedup_filename[DEDUP_HASH_FILENAME_MAX];
-            mmh3(&(bufp->buf), bufp->length.val, 0, &comp_bufp->hash[0]);
+            if (g_use_xxh3_128) {
+                XXH128_hash_t x = XXH3_128bits(&(bufp->buf), bufp->length.val);
+                XXH128_canonicalFromHash((void*)&comp_bufp->hash[0], x);
+            } else {
+                mmh3(&(bufp->buf), bufp->length.val, 0, &comp_bufp->hash[0]);
+            }
             comp_bufp->is_zero = dedup_is_zero_chunk(&comp_bufp->hash[0]);
             if (!comp_bufp->is_zero || g_version == 1) {
                 dedup_hash_filename(dedup_filename, &comp_bufp->hash[0], 1, 0);
@@ -1164,13 +1169,21 @@ write_decompressed(void *arg)
             buf = bufp->buf;
 
             if (g_opt_verify_decompressed) {
-                char hash[DEDUP_MAC_SIZE_BYTES];
                 char hash_c[DEDUP_MAC_SIZE_STR] = {};
                 char hash_e[DEDUP_MAC_SIZE_STR] = {};
-                mmh3(bufp->buf, length, 0, &hash[0]);
-                dedup_hash_sprint(&hash[0], hash_c);
                 dedup_hash_sprint(buf_hash, hash_e);
-                vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s", sequence, hash_c, hash_e);
+                if (g_use_xxh3_128) {
+                    XXH128_canonical_t h;
+                    XXH128_hash_t x = XXH3_128bits(bufp->buf, length);
+                    XXH128_canonicalFromHash(&h, x);
+                    dedup_hash_sprint(&h.digest[0], hash_c);
+                    vdie_if_n(memcmp(&h.digest[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s", sequence, hash_c, hash_e);
+                } else {
+                    char hash[DEDUP_MAC_SIZE_BYTES];
+                    mmh3(bufp->buf, length, 0, &hash[0]);
+                    dedup_hash_sprint(&hash[0], hash_c);
+                    vdie_if_n(memcmp(&hash[0], buf_hash, DEDUP_MAC_SIZE_BYTES), "seq %d hash mismatch computed %s expected %s", sequence, hash_c, hash_e);
+                }
                 if (g_opt_verbose > 1) {
                     BACKY_LOG("chunk seq %lu hash %s OK\n", sequence, hash_c);
                 }
@@ -1302,10 +1315,17 @@ decompress(void *arg)
                 (unsigned long *) &(comp_bufp->length),
                 NULL);
             if (ret == -8) {
-                char hash[DEDUP_MAC_SIZE_BYTES];
                 char hash_c[DEDUP_MAC_SIZE_STR] = {};
-                mmh3(comp_bufp->buf, comp_bufp->length.val, 0, &hash[0]);
-                dedup_hash_sprint(&hash[0], hash_c);
+                if (g_use_xxh3_128) {
+                    XXH128_canonical_t h;
+                    XXH128_hash_t x = XXH3_128bits(comp_bufp->buf, comp_bufp->length.val);
+                    XXH128_canonicalFromHash(&h, x);
+                    dedup_hash_sprint(&h.digest[0], hash_c);
+                } else {
+                    char hash[DEDUP_MAC_SIZE_BYTES];
+                    mmh3(comp_bufp->buf, comp_bufp->length.val, 0, &hash[0]);
+                    dedup_hash_sprint(&hash[0], hash_c);
+                }
                 BACKY_LOG("length %ld hash %s\n", comp_bufp->length.val, hash_c);
             }
             if (ret != LZO_E_OK) {
@@ -1561,6 +1581,7 @@ main(int argc, char **argv)
         case 'c':
             g_opt_compress = 1;
             g_version = 3;
+            g_use_xxh3_128 = true;
             break;
         case 'u':
             g_opt_update = 1;

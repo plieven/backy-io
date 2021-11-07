@@ -8,11 +8,6 @@ char *errormap = NULL;
 char *zeromap = NULL;
 struct rbd_connection conn = {0};
 
-#pragma GCC push_options
-#pragma GCC target("avx512f")
-#include <immintrin.h>
-#define unlikely(x)     __builtin_expect((x),0)
-
 static bool
 buffer_zero_avx512(const void *buf, size_t len)
 {
@@ -40,7 +35,6 @@ buffer_zero_avx512(const void *buf, size_t len)
 }
 
 int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
-    char h[DEDUP_MAC_SIZE_BYTES];
     long i = offs >> conn.info.order;
     assert(!(offs & (conn.info.obj_size - 1)));
     assert(len == conn.info.obj_size || len == conn.info.size - offs);
@@ -50,9 +44,19 @@ int read_cb(uint64_t offs, size_t len, const char * buf, void *opaque) {
             OBJ_SET_ALLOCATED(errormap, i);
         }
     } else {
-        mmh3(buf, len, 0, &h[0]);
-        if (memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
-            OBJ_SET_ALLOCATED(errormap, i);
+        if (g_use_xxh3_128) {
+            XXH128_canonical_t h;
+            XXH128_hash_t x = XXH3_128bits(buf, len);
+            XXH128_canonicalFromHash(&h, x);
+            if (memcmp(&h.digest[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+                OBJ_SET_ALLOCATED(errormap, i);
+            }
+        } else {
+            char h[DEDUP_MAC_SIZE_BYTES];
+            mmh3(buf, len, 0, &h[0]);
+            if (memcmp(&h[0], g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) {
+                OBJ_SET_ALLOCATED(errormap, i);
+            }
         }
     }
     fprintf(stderr, "progress: %lu bytes read\n", offs + len);

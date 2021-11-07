@@ -49,7 +49,11 @@ int main(int argc, char** argv) {
         assert(buf2_size == decompressed_size);
         mmh3(buf2, decompressed_size, 0, &hash[0]);
         dedup_hash_sprint(&hash[0], hash_c);
-        fprintf(stderr, "hash %s\n", hash_c);
+        fprintf(stderr, "hash %s (%s)\n", hash_c, DEDUP_MAC_NAME);
+        XXH128_hash_t x = XXH3_128bits(buf2, decompressed_size);
+        XXH128_canonicalFromHash((void*)&hash[0], x);
+        dedup_hash_sprint(&hash[0], hash_c);
+        fprintf(stderr, "hash %s (%s)\n", hash_c, DEDUP_MAC_NAME_XXH3);
         if (argc >=3 && !strcmp("-o", argv[2])) {
             write(1, buf2, decompressed_size);
             fprintf(stderr, "wrote %lu bytes to stdout\n", decompressed_size);
@@ -61,7 +65,11 @@ int main(int argc, char** argv) {
         char hash_c[DEDUP_MAC_SIZE_STR] = {};
         mmh3(buf, bytes, 0, &hash[0]);
         dedup_hash_sprint(&hash[0], hash_c);
-        fprintf(stderr, "hash %s\n", hash_c);
+        fprintf(stderr, "hash %s (%s)\n", hash_c, DEDUP_MAC_NAME);
+        XXH128_hash_t x = XXH3_128bits(buf, bytes);
+        XXH128_canonicalFromHash((void*)&hash[0], x);
+        dedup_hash_sprint(&hash[0], hash_c);
+        fprintf(stderr, "hash %s (%s)\n", hash_c, DEDUP_MAC_NAME_XXH3);
         work_buf = malloc(LZO1X_1_MEM_COMPRESS);
         assert(work_buf);
         unsigned long buf2_bytes = bytes + bytes / 16 + 64 + 3 + 5;

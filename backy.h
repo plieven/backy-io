@@ -18,10 +18,20 @@
 #include <stdint.h>
 #include <malloc.h>     /* valloc() */
 #include <libgen.h>
+#include <stdbool.h>
 
 extern void _Z19MurmurHash3_x64_128PKvijPv ( const void * key, int len, uint32_t seed, void * out );
 
+#pragma GCC push_options
+#pragma GCC target("avx512f")
+#include <immintrin.h>
+#define unlikely(x)     __builtin_expect((x),0)
+
+#define XXH_VECTOR XXH_AVX512
+#include "xxHash/xxh3.h"
+
 #define DEDUP_MAC_NAME "mmh3-x64-128"
+#define DEDUP_MAC_NAME_XXH3 "xxh3-128"
 #define DEDUP_MAC_SIZE 128
 #define DEDUP_MAC_SIZE_BYTES DEDUP_MAC_SIZE / 8
 #define DEDUP_MAC_SIZE_STR DEDUP_MAC_SIZE / 4 + 1
@@ -92,6 +102,7 @@ static char* g_block_mapping = NULL;
 static uint8_t* g_block_is_compressed = NULL;
 static char g_zeroblock_hash[DEDUP_MAC_SIZE_BYTES];
 static char *g_metadata = NULL;
+static bool g_use_xxh3_128 = false;
 static uint32_t g_crc32c_expected = 0xffffffff;
 
 static char g_estr_malloc[] =       "malloc";
@@ -156,7 +167,13 @@ static void init_zero_block() {
     g_zeroblock = valloc(g_block_size);
     die_if(!g_zeroblock, ESTR_MALLOC);
     memset(g_zeroblock, 0x00, g_block_size);
-    mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
+    if (g_use_xxh3_128) {
+        assert(sizeof(XXH128_canonical_t) == DEDUP_MAC_SIZE_BYTES);
+        XXH128_hash_t x = XXH3_128bits(g_zeroblock, g_block_size);
+        XXH128_canonicalFromHash((void*)g_zeroblock_hash, x);
+    } else {
+        mmh3(g_zeroblock, g_block_size, 0, &g_zeroblock_hash[0]);
+    }
     dedup_hash_sprint(g_zeroblock_hash, h);
     BACKY_LOG("init_zero_block: zeroblock hash is %s\n", h);
 }
@@ -238,7 +255,12 @@ static int parse_json(int fd)
             g_version = val->u.integer;
             vgotoout_if_n(g_version < 1 || g_version > 3, "unsupported version %d", g_version);
         } else if (val->type == json_string && !strcmp(name, "hash")) {
-            vgotoout_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'", val->u.string.length, val->u.string.ptr);
+            if (val->u.string.length == strlen(DEDUP_MAC_NAME_XXH3) && !strncmp(DEDUP_MAC_NAME_XXH3, val->u.string.ptr, strlen(DEDUP_MAC_NAME_XXH3))) {
+                g_use_xxh3_128 = true;
+            } else {
+                vgotoout_if_n(val->u.string.length != strlen(DEDUP_MAC_NAME) || strncmp(DEDUP_MAC_NAME, val->u.string.ptr, strlen(DEDUP_MAC_NAME)), "unsupported hash: '%.*s'", val->u.string.length, val->u.string.ptr);
+            }
+            BACKY_LOG("hash: %s\n", val->u.string.ptr);
         } else if (val->type == json_string && !strcmp(name, "crc32c")) {
             g_crc32c_expected = (h2d[val->u.string.ptr[0]] << 28) +
                                 (h2d[val->u.string.ptr[1]] << 24) +
