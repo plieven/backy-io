@@ -1369,7 +1369,7 @@ void verify_chunks() {
         if (g_version > 1 && dedup_is_zero_chunk(g_block_mapping + i * DEDUP_MAC_SIZE_BYTES)) continue;
         if ((g_opt_update || g_opt_no_create) && !memcmp(g_zeroblock, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, DEDUP_MAC_SIZE_BYTES)) continue;
         dedup_hash_filename(chunk_file, g_block_mapping + i * DEDUP_MAC_SIZE_BYTES, 1, 0);
-        dedup_exists = file_exists(chunk_file, 0, 1);
+        dedup_exists = file_exists(chunk_file, g_version != 2, 1);
         if (g_version == 2) {
             assert(g_block_is_compressed);
             g_block_is_compressed[i] = 1;
